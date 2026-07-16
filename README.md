@@ -1,0 +1,53 @@
+# Personal LMS
+
+Local-first, multi-agent learning system centered on an Obsidian vault.
+
+## Product statement
+
+Personal LMS coordinates specialized agents for tutoring, source curation, drilling, labs, proofreading, critical review, coaching, project management, and career alignment. Durable learning knowledge remains portable in Markdown inside Obsidian. Runtime state, inventories, queues, and metrics live in local databases and can be rebuilt.
+
+## Canonical workspace
+
+Use this WSL path as the shared project root:
+
+```text
+/home/ajsch/projects/personal-lms
+```
+
+Open this same root folder in Claude Code and Codex for shared visibility. Do not let two coding agents write to the same worktree at the same time. Use Git worktrees for parallel implementation.
+
+## Start here
+
+1. Read `AGENTS.md` when using Codex.
+2. Read `CLAUDE.md` when using Claude Code.
+3. Read the master plan:
+   `docs/exec-plans/active/2026-07-16_PERSONAL_LMS_MULTI_AGENT_MASTER_PLAN.md`
+4. For tonight's Claude session, use:
+   `docs/handoffs/2026-07-16_CLAUDE_NIGHT_RUN.md`
+5. When Claude is unavailable or rate-limited, use:
+   `docs/handoffs/QWEN_WORK_QUEUE.md`
+
+## Core decisions
+
+- CrewAI open-source framework is the initial orchestration foundation.
+- CrewAI Flows control deterministic routing, permissions, state, approvals, and writes.
+- Crews provide bounded specialist collaboration only where it adds value.
+- Qwen through Ollama is the default model tier for routine work.
+- Hosted APIs are escalation resources, not the default.
+- Python services handle deterministic work without an LLM.
+- Obsidian is the durable learning knowledge store.
+- SQLite is the initial source catalog and runtime state store.
+- Raw PDFs, videos, and archives remain outside the curated vault.
+- Catalog everything; curate selectively; promote only the best sources.
+
+## Production milestone
+
+The first production milestone is a usable vertical slice, not the complete processing of the entire archive. It must support:
+
+- one Personal Assistant interface;
+- a Tutor, Librarian, Curator, Drill Master, Lab Coach, and Coach;
+- local Qwen routing with API escalation controls;
+- safe Obsidian read/write through controlled templates;
+- a source catalog for files, videos, and URLs;
+- one complete study-session workflow;
+- audit logs, tests, backups, and recovery instructions.
