@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Local-first, provider-portable multi-agent learning system centered on Obsidian."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2,<3",
+]
 
 [project.scripts]
 personal-lms = "personal_lms.cli:main"
