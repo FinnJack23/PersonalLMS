@@ -10,7 +10,10 @@ part of this package's public API; only ``EvidenceCheckedTutorService`` and
 are.
 
 Explicitly out of scope, same as both public services: semantic claim
-verification. Citation verification here is structural only.
+verification. Citation verification here is structural only — semantic
+verification, when a ``SourceVerifier`` is configured, is a distinct gate
+that runs strictly after structural citation validation passes; see
+``answer_from_bundle``'s execution order.
 """
 
 from __future__ import annotations
@@ -22,6 +25,10 @@ from personal_lms.domain.budgets import BudgetPolicy
 from personal_lms.domain.citations import SourceCitation
 from personal_lms.domain.librarian import GroundingBundle, RetrievedEvidence
 from personal_lms.domain.models import ModelRequest, ModelResult
+from personal_lms.domain.source_verification import (
+    SourceVerificationRequest,
+    SourceVerificationStatus,
+)
 from personal_lms.domain.tutor import (
     CitationIntegrityStatus,
     TeachingResponse,
@@ -30,6 +37,11 @@ from personal_lms.domain.tutor import (
 from personal_lms.policies.errors import RoutingError
 from personal_lms.policies.router import DeterministicRouter
 from personal_lms.providers.errors import ProviderError
+from personal_lms.source_verification.errors import SourceVerificationError
+from personal_lms.source_verification.protocol import (
+    SourceVerifier,
+    validate_result_matches_request,
+)
 
 CAPABILITY_PROFILE_EVIDENCE_CHECKED = "tutor_evidence_checked"
 CAPABILITY_PROFILE_GENERAL_KNOWLEDGE = "tutor_general_knowledge"
@@ -43,15 +55,24 @@ PROVIDER_FAILURE_REASON = "the model provider failed while answering this questi
 CITATION_INTEGRITY_FAILURE_REASON = (
     "the generated answer failed structural citation-integrity verification"
 )
+SOURCE_VERIFICATION_FAILED_REASON = (
+    "the source verifier failed while checking semantic support for the generated answer"
+)
+SOURCE_VERIFICATION_NOT_VERIFIED_REASON = (
+    "the generated answer did not pass semantic source verification"
+)
 
 # confidence is a required TeachingResponse field, but no Tutor service in
-# this package performs semantic/factual verification — passing structural
-# citation-integrity checks is not semantic confidence. Every response,
-# verified or refused, therefore reports the most conservative value the
-# schema permits (its lower bound, 0.0) rather than asserting any earned
-# confidence: semantic confidence is simply not assessed here.
-# citation_integrity_status (not this field) is the authoritative
-# structural-verification signal.
+# this package performs semantic/factual verification on its own — passing
+# structural citation-integrity checks is not semantic confidence, and a
+# configured SourceVerifier's own semantic_confidence (when it supplies
+# one) is copied through as-is rather than derived here. Every response
+# that has no verifier-supplied confidence to copy — verified, refused, or
+# semantically unassessed — reports the most conservative value the schema
+# permits (its lower bound, 0.0) rather than asserting any earned
+# confidence. citation_integrity_status/source_verification_status (not
+# this field) are the authoritative structural/semantic verification
+# signals.
 CONFIDENCE_NOT_ASSESSED = 0.0
 
 _CITATION_LABEL_PATTERN = re.compile(r"\[(E\d+)\]")
@@ -207,6 +228,7 @@ def refusal_response(
     retrieval_gaps: list[str],
     reason: str,
     citation_integrity_status: CitationIntegrityStatus = CitationIntegrityStatus.NOT_APPLICABLE,
+    source_verification_status: SourceVerificationStatus = SourceVerificationStatus.NOT_APPLICABLE,
 ) -> TeachingResponse:
     """A deterministic cannot-answer result. Never fabricates an explanation or citation.
 
@@ -214,6 +236,13 @@ def refusal_response(
     (rather than a ``GroundingBundle``) so this same helper covers the
     general-knowledge mode too, which has no bundle at all —
     ``grounding_is_sufficient=None`` there, never a fabricated ``False``.
+
+    ``source_verification_status`` defaults to ``NOT_APPLICABLE`` — correct
+    for every refusal reached *before* semantic verification could ever
+    run (insufficient grounding, no eligible provider, provider failure,
+    failed structural citation validation). Callers reached *after* a
+    configured verifier actually ran pass the verifier's real outcome
+    (``FAILED``, ``PARTIALLY_VERIFIED``, ``REJECTED``, etc.) explicitly.
     """
     return TeachingResponse(
         request_id=request.request_id,
@@ -224,6 +253,7 @@ def refusal_response(
         confidence=CONFIDENCE_NOT_ASSESSED,
         grounding_is_sufficient=grounding_is_sufficient,
         citation_integrity_status=citation_integrity_status,
+        source_verification_status=source_verification_status,
         retrieval_gaps=list(retrieval_gaps),
         refusal_reason=reason,
     )
@@ -267,6 +297,7 @@ async def answer_from_bundle(
     bundle: GroundingBundle,
     router: DeterministicRouter,
     budget_policy: BudgetPolicy,
+    source_verifier: SourceVerifier | None = None,
 ) -> TeachingResponse:
     """Generate and structurally verify one ``TeachingResponse`` from an
     already-obtained ``GroundingBundle`` — fresh retrieval or caller-supplied.
@@ -276,8 +307,17 @@ async def answer_from_bundle(
     (using the caller-supplied bundle directly, performing no retrieval of
     its own) — the only difference between the two modes is where
     ``bundle`` came from; everything downstream (trust filtering, prompt
-    construction, routing, generation, citation verification) is identical
-    and implemented exactly once here.
+    construction, routing, generation, structural citation verification,
+    and — when configured — semantic Source Verifier verification) is
+    identical and implemented exactly once here.
+
+    Execution order: sufficiency check, then routing, then generation,
+    then structural citation-label validation, then (only when
+    ``source_verifier`` is not ``None`` and structural validation passed)
+    exactly one ``source_verifier.verify()`` call. The verifier never runs
+    when grounding is insufficient, routing is rejected or requires
+    approval, generation fails, or structural citation validation fails —
+    every one of those paths already returns before reaching it.
     """
     if not bundle.is_sufficient:
         return refusal_response(
@@ -336,15 +376,75 @@ async def answer_from_bundle(
             citation_integrity_status=CitationIntegrityStatus.FAILED,
         )
 
+    citations = citations_for_labels(blocks, used_labels)
+
+    if source_verifier is None:
+        return TeachingResponse(
+            request_id=request.request_id,
+            learning_objective=request.learning_objective,
+            explanation=result.output_text,
+            citations=citations,
+            grounded_in_general_knowledge=False,
+            confidence=CONFIDENCE_NOT_ASSESSED,
+            grounding_is_sufficient=True,
+            citation_integrity_status=CitationIntegrityStatus.VERIFIED,
+            source_verification_status=SourceVerificationStatus.NOT_ASSESSED,
+            retrieval_gaps=list(bundle.gaps),
+            refusal_reason=None,
+        )
+
+    verification_request = SourceVerificationRequest(
+        request_id=str(request.request_id),
+        generated_text=result.output_text,
+        grounding_bundle=bundle,
+        used_citation_labels=tuple(used_labels),
+        privacy_classification=request.privacy_classification,
+    )
+    verifier_id = getattr(source_verifier, "verifier_id", "source_verifier")
+
+    try:
+        verification_result = await source_verifier.verify(verification_request)
+        validate_result_matches_request(
+            verification_request, verification_result, verifier_id=verifier_id
+        )
+    except SourceVerificationError:
+        return refusal_response(
+            request,
+            grounding_is_sufficient=bundle.is_sufficient,
+            retrieval_gaps=bundle.gaps,
+            reason=SOURCE_VERIFICATION_FAILED_REASON,
+            citation_integrity_status=CitationIntegrityStatus.VERIFIED,
+            source_verification_status=SourceVerificationStatus.FAILED,
+        )
+
+    if verification_result.status is not SourceVerificationStatus.VERIFIED:
+        # PARTIALLY_VERIFIED, REJECTED, or any other non-VERIFIED outcome a
+        # configured verifier reports: fail closed. No rewriting, no
+        # regeneration, no hosted escalation — see the module docstring.
+        return refusal_response(
+            request,
+            grounding_is_sufficient=bundle.is_sufficient,
+            retrieval_gaps=bundle.gaps,
+            reason=SOURCE_VERIFICATION_NOT_VERIFIED_REASON,
+            citation_integrity_status=CitationIntegrityStatus.VERIFIED,
+            source_verification_status=verification_result.status,
+        )
+
+    confidence = (
+        verification_result.semantic_confidence
+        if verification_result.semantic_confidence is not None
+        else CONFIDENCE_NOT_ASSESSED
+    )
     return TeachingResponse(
         request_id=request.request_id,
         learning_objective=request.learning_objective,
         explanation=result.output_text,
-        citations=citations_for_labels(blocks, used_labels),
+        citations=citations,
         grounded_in_general_knowledge=False,
-        confidence=CONFIDENCE_NOT_ASSESSED,
+        confidence=confidence,
         grounding_is_sufficient=True,
         citation_integrity_status=CitationIntegrityStatus.VERIFIED,
+        source_verification_status=SourceVerificationStatus.VERIFIED,
         retrieval_gaps=list(bundle.gaps),
         refusal_reason=None,
     )
@@ -358,10 +458,13 @@ async def answer_from_general_knowledge(
 ) -> TeachingResponse:
     """Route and generate exactly once with no grounding bundle at all.
 
-    No retrieval, no evidence blocks, no citation verification (there is
-    no trusted-label set to verify against) — ``citations`` is always
-    ``[]`` and ``citation_integrity_status`` is always ``NOT_APPLICABLE``
-    (verification was never performed, by design, for this mode).
+    No retrieval, no evidence blocks, no structural citation verification
+    (there is no trusted-label set to verify against), and — deliberately,
+    this function accepts no ``source_verifier`` parameter at all — no
+    semantic Source Verifier call either. ``citations`` is always ``[]``,
+    ``citation_integrity_status`` is always ``NOT_APPLICABLE``, and
+    ``source_verification_status`` is always ``NOT_APPLICABLE`` (neither
+    check was ever reachable, by design, for this mode).
     ``grounding_is_sufficient`` is ``None`` rather than a fabricated
     ``False``: there is no bundle whose sufficiency could even be judged.
     """
@@ -398,6 +501,7 @@ async def answer_from_general_knowledge(
         confidence=CONFIDENCE_NOT_ASSESSED,
         grounding_is_sufficient=None,
         citation_integrity_status=CitationIntegrityStatus.NOT_APPLICABLE,
+        source_verification_status=SourceVerificationStatus.NOT_APPLICABLE,
         retrieval_gaps=[],
         refusal_reason=None,
     )

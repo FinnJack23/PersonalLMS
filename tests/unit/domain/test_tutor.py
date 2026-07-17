@@ -12,6 +12,7 @@ from personal_lms.domain import (
     KnowledgeScope,
     PrivacyClassification,
     SourceCitation,
+    SourceVerificationStatus,
     TeachingResponse,
     TutorTeachingRequest,
 )
@@ -346,6 +347,7 @@ def test_teaching_response_old_shaped_payload_without_new_fields_still_validates
     assert response.citation_integrity_status is None
     assert response.retrieval_gaps == []
     assert response.refusal_reason is None
+    assert response.source_verification_status is SourceVerificationStatus.NOT_ASSESSED
 
 
 def test_teaching_response_exposes_grounding_and_citation_integrity_fields() -> None:
@@ -391,6 +393,66 @@ def test_teaching_response_json_round_trip_with_new_fields() -> None:
         grounding_is_sufficient=True,
         citation_integrity_status=CitationIntegrityStatus.VERIFIED,
         retrieval_gaps=["a gap"],
+    )
+    restored = TeachingResponse.model_validate_json(response.model_dump_json())
+    assert restored == response
+
+
+# --- source_verification_status: optional, backward-compatible --------------
+
+
+def test_teaching_response_source_verification_status_defaults_to_not_assessed() -> None:
+    response = TeachingResponse(
+        request_id=uuid4(),
+        learning_objective="x",
+        explanation="y",
+        grounded_in_general_knowledge=True,
+        confidence=0.0,
+    )
+    assert response.source_verification_status is SourceVerificationStatus.NOT_ASSESSED
+
+
+def test_teaching_response_exposes_source_verification_status() -> None:
+    response = TeachingResponse(
+        request_id=uuid4(),
+        learning_objective="Explain OSPF DR election",
+        explanation="The DR is elected by priority, then router ID.",
+        citations=[_citation()],
+        confidence=0.0,
+        citation_integrity_status=CitationIntegrityStatus.VERIFIED,
+        source_verification_status=SourceVerificationStatus.VERIFIED,
+    )
+    assert response.source_verification_status is SourceVerificationStatus.VERIFIED
+    assert response.citation_integrity_status is CitationIntegrityStatus.VERIFIED
+
+
+def test_teaching_response_source_verification_status_distinct_from_citation_integrity() -> None:
+    """A response can be structurally citation-verified while semantic
+    source verification failed closed — two distinct, independently
+    inspectable signals."""
+    response = TeachingResponse(
+        request_id=uuid4(),
+        learning_objective="x",
+        explanation="This question cannot be answered from approved, trusted sources.",
+        grounded_in_general_knowledge=True,
+        confidence=0.0,
+        citation_integrity_status=CitationIntegrityStatus.VERIFIED,
+        source_verification_status=SourceVerificationStatus.REJECTED,
+        refusal_reason="the generated answer did not pass semantic source verification",
+    )
+    assert response.citation_integrity_status is CitationIntegrityStatus.VERIFIED
+    assert response.source_verification_status is SourceVerificationStatus.REJECTED
+
+
+def test_teaching_response_json_round_trip_with_source_verification_status() -> None:
+    response = TeachingResponse(
+        request_id=uuid4(),
+        learning_objective="Explain OSPF DR election",
+        explanation="The DR is elected by priority, then router ID.",
+        citations=[_citation()],
+        confidence=0.9,
+        citation_integrity_status=CitationIntegrityStatus.VERIFIED,
+        source_verification_status=SourceVerificationStatus.VERIFIED,
     )
     restored = TeachingResponse.model_validate_json(response.model_dump_json())
     assert restored == response

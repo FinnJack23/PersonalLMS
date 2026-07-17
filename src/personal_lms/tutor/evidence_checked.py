@@ -60,6 +60,7 @@ from personal_lms.domain.librarian import LibrarianRetrievalRequest
 from personal_lms.domain.tutor import TeachingResponse, TutorTeachingRequest
 from personal_lms.librarian.content_grounding import LibrarianContentGroundingService
 from personal_lms.policies.router import DeterministicRouter
+from personal_lms.source_verification.protocol import SourceVerifier
 from personal_lms.tutor._generation import answer_from_bundle
 
 
@@ -86,6 +87,7 @@ class EvidenceCheckedTutorService:
         budget_policy: BudgetPolicy,
         raw_query: str | None = None,
         max_results: int | None = None,
+        source_verifier: SourceVerifier | None = None,
     ) -> TeachingResponse:
         """Retrieve, ground, generate, and structurally verify one teaching response.
 
@@ -105,8 +107,16 @@ class EvidenceCheckedTutorService:
         ``request.knowledge_scope`` as the retrieval scope filter, and
         ``request.privacy_classification`` as both the retrieval ceiling
         and the ``ModelRequest`` privacy classification passed to routing
-        — there is no separate privacy parameter here, so nothing can
-        conflict with the classification already recorded on the request.
+        and to any configured Source Verifier — there is no separate
+        privacy parameter here, so nothing can conflict with the
+        classification already recorded on the request.
+
+        ``source_verifier`` is optional and, like ``budget_policy``, a
+        per-call dependency — omitted (``None``) by default, preserving
+        every existing caller unchanged. When supplied, it runs exactly
+        once, strictly after structural citation-label validation passes
+        (see ``personal_lms.tutor._generation.answer_from_bundle`` for the
+        full execution order and gating rules).
         """
         if not request.retrieve_grounding:
             raise ValueError(
@@ -125,5 +135,9 @@ class EvidenceCheckedTutorService:
         bundle = self._grounding_service.retrieve(retrieval_request)
 
         return await answer_from_bundle(
-            request=request, bundle=bundle, router=self._router, budget_policy=budget_policy
+            request=request,
+            bundle=bundle,
+            router=self._router,
+            budget_policy=budget_policy,
+            source_verifier=source_verifier,
         )

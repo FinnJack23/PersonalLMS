@@ -48,6 +48,13 @@ from personal_lms.domain.reconstruction import (
 )
 from personal_lms.domain.routing import RoutingDecision
 from personal_lms.domain.runs import RunState
+from personal_lms.domain.source_verification import (
+    ClaimSupportStatus,
+    ClaimVerification,
+    SourceVerificationRequest,
+    SourceVerificationResult,
+    SourceVerificationStatus,
+)
 from personal_lms.domain.tutor import (
     CitationIntegrityStatus,
     DrillRecommendation,
@@ -64,6 +71,8 @@ __all__ = [
     "ApprovalStatus",
     "BudgetPolicy",
     "CitationIntegrityStatus",
+    "ClaimSupportStatus",
+    "ClaimVerification",
     "ContentChunk",
     "CorpusDocument",
     "CostClass",
@@ -107,6 +116,9 @@ __all__ = [
     "SourceRecord",
     "SourceRelationshipType",
     "SourceType",
+    "SourceVerificationRequest",
+    "SourceVerificationResult",
+    "SourceVerificationStatus",
     "TeachingResponse",
     "TutorTeachingRequest",
     "VaultNoteDraft",

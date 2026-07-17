@@ -32,6 +32,14 @@ callers or stored JSON that predates them.
 additions — older stored request JSON without either key still validates,
 selecting the pre-existing grounding-bundle/general-knowledge modes and
 the previously-implicit ``INTERNAL`` privacy ceiling respectively.
+
+``TeachingResponse.source_verification_status`` (default
+``SourceVerificationStatus.NOT_ASSESSED``) exposes the separate, optional
+Source Verifier's semantic claim-support judgment — see
+``personal_lms.domain.source_verification`` and
+``personal_lms.tutor._generation`` for the gate that populates it. It is
+never a substitute for ``citation_integrity_status``, which remains the
+structural citation-label signal; both can be inspected independently.
 """
 
 from __future__ import annotations
@@ -47,6 +55,7 @@ from personal_lms.domain.citations import SourceCitation
 from personal_lms.domain.knowledge_scope import KnowledgeScope
 from personal_lms.domain.librarian import GroundingBundle
 from personal_lms.domain.privacy import PrivacyClassification
+from personal_lms.domain.source_verification import SourceVerificationStatus
 
 
 class CitationIntegrityStatus(StrEnum):
@@ -186,6 +195,17 @@ class TeachingResponse(StrictModel):
             "Structural citation-integrity verification outcome — see "
             "CitationIntegrityStatus. None for responses that predate this field "
             "or were never structurally verified."
+        ),
+    )
+    source_verification_status: SourceVerificationStatus = Field(
+        default=SourceVerificationStatus.NOT_ASSESSED,
+        description=(
+            "Semantic claim-support verification outcome — distinct from and never "
+            "a substitute for citation_integrity_status, which remains the "
+            "structural citation signal. Defaults to NOT_ASSESSED (no Source "
+            "Verifier was configured/run) for both new responses built without a "
+            "verifier and older stored responses that predate this field entirely — "
+            "never fabricated as VERIFIED merely because citation syntax passed."
         ),
     )
     retrieval_gaps: list[str] = Field(
