@@ -14,14 +14,17 @@ retrieval, or new dependency is introduced here — the existing
 to exercise this entire execution path. A real local-model provider
 adapter is a separate, later milestone.
 
-Request/result correlation is preserved end to end:
-``SourceVerificationRequest.request_id`` (a string) becomes
-``ModelRequest.request_id`` directly whenever it parses as a ``UUID``
-(``ModelRequest.request_id`` is UUID-typed) — falling back to a fresh
-random ``UUID`` only when it does not, never rewriting the original
-string identifier itself, which is separately embedded in the prompt
-text and must be echoed back inside the model's own JSON response body.
-Both correlations are validated, never silently repaired:
+Request/result correlation is preserved end to end and stays fully
+deterministic: ``SourceVerificationRequest.request_id`` (a string)
+becomes ``ModelRequest.request_id`` directly whenever it parses as a
+``UUID`` (``ModelRequest.request_id`` is UUID-typed) — falling back to a
+``uuid5`` derivation over a single fixed namespace only when it does not
+(see ``_to_model_request_id``), never a random ``uuid4()``, so repeated
+equivalent verification requests always correlate to the identical
+``ModelRequest.request_id``. The original string identifier itself is
+never rewritten — it is separately embedded in the prompt text and must
+be echoed back inside the model's own JSON response body. Both
+correlations are validated, never silently repaired:
 ``ModelResult.request_id`` must equal the ``ModelRequest.request_id`` we
 sent, and the parsed ``SourceVerificationResult.request_id`` must equal
 ``request.request_id`` (checked by
@@ -46,7 +49,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from uuid import UUID, uuid4
+from uuid import UUID, uuid5
 
 from pydantic import ValidationError
 
@@ -76,6 +79,14 @@ from personal_lms.source_verification.errors import (
 from personal_lms.source_verification.protocol import validate_result_matches_request
 
 _CAPABILITY_PROFILE = "source_verification"
+
+# Fixed, module-level namespace for deterministically deriving a
+# ModelRequest.request_id (UUID-typed) from a non-UUID-shaped
+# SourceVerificationRequest.request_id (str-typed) via uuid5 — never
+# uuid4(), never random, never clock- or environment-derived. Generated
+# once (uuid4()) and hardcoded here; this literal value must never change,
+# or previously-derived correlation IDs would silently shift.
+_SOURCE_VERIFICATION_NAMESPACE = UUID("6f6b2f1e-3f0a-4a9e-9d6a-8a6f9f6c9b3a")
 
 _RESULT_SHAPE_EXAMPLE = (
     '{"request_id": "<echo the request_id given below>", '
@@ -223,17 +234,27 @@ def _build_prompt(request: SourceVerificationRequest, evidence_items: list[_Evid
     )
 
 
-def _model_request_id(request_id: str) -> UUID:
-    """Preserve ``request.request_id`` as the ``ModelRequest.request_id``
-    whenever it parses as a ``UUID`` (``ModelRequest.request_id`` is
-    UUID-typed) — falling back to a fresh random ``UUID`` only when it
-    does not. Never rewrites the original string identifier itself, which
-    is separately embedded in the prompt text regardless of this outcome.
+def _to_model_request_id(request_id: str) -> UUID:
+    """Deterministically derive the ``ModelRequest.request_id`` used for
+    execution correlation from ``request.request_id``.
+
+    Preserves ``request.request_id`` as-is whenever it already parses as a
+    ``UUID`` (``ModelRequest.request_id`` is UUID-typed). When it does
+    not, deterministically derives a ``UUID`` via ``uuid5`` over a single
+    fixed, module-level namespace — never a random ``uuid4()`` — so
+    repeated equivalent verification requests always correlate to the
+    identical ``ModelRequest.request_id``. This is purely an execution
+    correlation identifier: it is never written back into
+    ``SourceVerificationRequest.request_id`` or the parsed
+    ``SourceVerificationResult.request_id``, both of which keep the
+    original string exactly as given — the string itself is what is
+    separately embedded in the prompt text and cross-checked by
+    ``personal_lms.source_verification.protocol.validate_result_matches_request``.
     """
     try:
         return UUID(request_id)
     except ValueError:
-        return uuid4()
+        return uuid5(_SOURCE_VERIFICATION_NAMESPACE, request_id)
 
 
 def _parse_json_object(output_text: str, *, verifier_id: str) -> dict[str, object]:
@@ -315,7 +336,7 @@ class ModelBackedSourceVerifier:
 
         policy = self._routing_policy
         model_request = ModelRequest(
-            request_id=_model_request_id(request.request_id),
+            request_id=_to_model_request_id(request.request_id),
             capability_profile=_CAPABILITY_PROFILE,
             prompt=prompt,
             requires_vision=policy.requires_vision,

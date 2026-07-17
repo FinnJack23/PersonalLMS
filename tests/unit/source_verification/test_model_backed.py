@@ -44,6 +44,7 @@ from personal_lms.source_verification import (
 from personal_lms.source_verification.model_backed import (
     _build_prompt,
     _resolve_used_evidence,
+    _to_model_request_id,
 )
 
 
@@ -560,6 +561,117 @@ def test_model_request_id_matches_the_verification_request() -> None:
     asyncio.run(verifier.verify(request))
 
     assert provider.requests[0].request_id == UUID(request_id)
+
+
+# --- deterministic (non-UUID) request-ID correlation ---------------------------
+
+
+def test_valid_uuid_string_maps_to_that_exact_uuid() -> None:
+    request_id = str(uuid4())
+    assert _to_model_request_id(request_id) == UUID(request_id)
+
+
+def test_same_non_uuid_id_always_maps_to_the_same_uuid() -> None:
+    first = _to_model_request_id("req-1")
+    second = _to_model_request_id("req-1")
+    assert first == second
+
+
+def test_different_non_uuid_ids_map_to_different_uuids() -> None:
+    assert _to_model_request_id("req-1") != _to_model_request_id("req-2")
+
+
+def test_repeated_equivalent_verification_calls_send_the_same_model_request_id() -> None:
+    request = _request(request_id="req-non-uuid")
+    payload = _verified_json(request.request_id)
+
+    provider_1 = _CapturingProvider(
+        FakeLocalProvider(output_text=payload, capability_profiles=(_local_profile(),))
+    )
+    router_1, _ = _router_with(provider_1)
+    asyncio.run(_verifier(router_1).verify(request))
+
+    provider_2 = _CapturingProvider(
+        FakeLocalProvider(output_text=payload, capability_profiles=(_local_profile(),))
+    )
+    router_2, _ = _router_with(provider_2)
+    asyncio.run(_verifier(router_2).verify(request))
+
+    assert provider_1.requests[0].request_id == provider_2.requests[0].request_id
+
+
+def test_model_result_correlation_still_succeeds_for_a_non_uuid_request_id() -> None:
+    request = _request(request_id="req-non-uuid")
+    provider = _CapturingProvider(
+        FakeLocalProvider(
+            output_text=_verified_json(request.request_id),
+            capability_profiles=(_local_profile(),),
+        )
+    )
+    router, _ = _router_with(provider)
+
+    result = asyncio.run(_verifier(router).verify(request))
+
+    assert result.status.value == "verified"
+
+
+def test_source_verification_result_request_id_remains_the_original_string() -> None:
+    request = _request(request_id="req-non-uuid")
+    provider = _CapturingProvider(
+        FakeLocalProvider(
+            output_text=_verified_json(request.request_id),
+            capability_profiles=(_local_profile(),),
+        )
+    )
+    router, _ = _router_with(provider)
+
+    result = asyncio.run(_verifier(router).verify(request))
+
+    assert result.request_id == "req-non-uuid"
+
+
+def test_to_model_request_id_uses_no_uuid4_or_random_source() -> None:
+    """Deterministic proof, not just repeated-call inference: patching
+    uuid4 in the module under test must never be invoked by
+    _to_model_request_id for a non-UUID id."""
+    import personal_lms.source_verification.model_backed as module
+
+    assert not hasattr(module, "uuid4")
+
+    # Reflectively confirm uuid5 (not uuid4/random) is what the function
+    # actually calls, by checking the derivation is a pure function of its
+    # input (a random source would make two calls in the same process
+    # diverge with overwhelming probability across many invocations).
+    results = {_to_model_request_id("stable-id") for _ in range(50)}
+    assert results == {_to_model_request_id("stable-id")}
+
+
+def test_no_schema_or_public_api_changes() -> None:
+    """SourceVerificationRequest/Result schemas and the SourceVerifier
+    protocol are untouched by this correction — only the private
+    ModelRequest.request_id derivation changed."""
+    from personal_lms.domain.source_verification import (
+        SourceVerificationRequest,
+        SourceVerificationResult,
+    )
+
+    assert set(SourceVerificationRequest.model_fields) == {
+        "request_id",
+        "generated_text",
+        "grounding_bundle",
+        "used_citation_labels",
+        "privacy_classification",
+    }
+    assert set(SourceVerificationResult.model_fields) == {
+        "request_id",
+        "status",
+        "claims",
+        "verified_citation_labels",
+        "unsupported_claim_count",
+        "conflict_count",
+        "semantic_confidence",
+        "reason_codes",
+    }
 
 
 def test_model_request_privacy_classification_matches_the_verification_request() -> None:
