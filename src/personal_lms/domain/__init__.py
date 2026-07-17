@@ -8,6 +8,7 @@ from personal_lms.domain.enums import (
     ApprovalStatus,
     CostClass,
     LatencyClass,
+    ObsidianWriteIntent,
     RoutingOutcome,
     RunStatus,
     SearchableTextStatus,
@@ -23,6 +24,20 @@ from personal_lms.domain.librarian import (
     RetrievedEvidence,
 )
 from personal_lms.domain.models import ModelCapabilityProfile, ModelRequest, ModelResult
+from personal_lms.domain.obsidian import (
+    ObsidianAttachmentAssociationRequest,
+    ObsidianAttachmentAssociationResult,
+    ObsidianNoteListRequest,
+    ObsidianNoteListResult,
+    ObsidianNoteReadRequest,
+    ObsidianNoteReadResult,
+    ObsidianNoteSummary,
+    ObsidianNoteWriteRequest,
+    ObsidianWriteApproval,
+    ObsidianWritePlan,
+    ObsidianWriteRejection,
+    ObsidianWriteResult,
+)
 from personal_lms.domain.privacy import PrivacyClassification
 from personal_lms.domain.reconstruction import (
     ObsidianArtifactLink,
@@ -53,6 +68,19 @@ __all__ = [
     "ModelRequest",
     "ModelResult",
     "ObsidianArtifactLink",
+    "ObsidianAttachmentAssociationRequest",
+    "ObsidianAttachmentAssociationResult",
+    "ObsidianNoteListRequest",
+    "ObsidianNoteListResult",
+    "ObsidianNoteReadRequest",
+    "ObsidianNoteReadResult",
+    "ObsidianNoteSummary",
+    "ObsidianNoteWriteRequest",
+    "ObsidianWriteApproval",
+    "ObsidianWriteIntent",
+    "ObsidianWritePlan",
+    "ObsidianWriteRejection",
+    "ObsidianWriteResult",
     "PrivacyClassification",
     "ProvenanceMetadata",
     "ReconstructedDocument",

@@ -107,3 +107,10 @@ class SearchableTextStatus(StrEnum):
     NONE = "none"
     PARTIAL = "partial"
     COMPLETE = "complete"
+
+
+class ObsidianWriteIntent(StrEnum):
+    """Whether a prepared Obsidian write plan targets a new or existing note."""
+
+    CREATE = "create"
+    UPDATE = "update"
