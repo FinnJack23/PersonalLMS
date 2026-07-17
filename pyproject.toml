@@ -18,6 +18,7 @@ ollama = [
 
 [project.scripts]
 personal-lms = "personal_lms.cli:main"
+personal-lms-ollama-smoke-test = "personal_lms.providers.ollama.smoke_test:main"
 
 [build-system]
 requires = ["hatchling"]
