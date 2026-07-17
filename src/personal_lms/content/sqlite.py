@@ -6,7 +6,12 @@ dependency. Every query is parameterized; this module never interpolates
 a search term, filter value, or any other caller-supplied string into SQL
 text. Table and column names are fixed literals from this module only,
 never caller input, so SQL-injection-shaped search or filter input is
-always treated as inert data.
+always treated as inert data. This includes the multi-value
+``ChunkSearchFilters.allowed_privacy_classifications`` filter: it builds a
+``... IN (?, ?, ...)`` clause with exactly one ``?`` per allowed value —
+the placeholder count varies, but every value is still bound, never
+interpolated — applied in the WHERE clause and therefore evaluated before
+``LIMIT`` truncates the result set.
 
 Mirrors ``personal_lms.catalog.sqlite`` closely (deliberately duplicated
 rather than shared, keeping this package independent):
@@ -176,6 +181,15 @@ def _filter_clause(
     if filters.privacy_classification is not None:
         clauses.append(f"{table_alias}.privacy_classification = ?")
         params.append(filters.privacy_classification.value)
+    if filters.allowed_privacy_classifications is not None:
+        allowed = filters.allowed_privacy_classifications
+        if not allowed:
+            # An empty allowed-set permits nothing — not "unfiltered".
+            clauses.append("1 = 0")
+        else:
+            placeholders = ", ".join("?" for _ in allowed)
+            clauses.append(f"{table_alias}.privacy_classification IN ({placeholders})")
+            params.extend(sorted(classification.value for classification in allowed))
 
     scope_values = (
         filters.knowledge_domain,

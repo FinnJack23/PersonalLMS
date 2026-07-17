@@ -106,6 +106,93 @@ def test_retrieved_evidence_can_explicitly_record_not_duplicate_or_superseded() 
     assert evidence.is_superseded is False
 
 
+# --- text / document_id / chunk_id: optional, backward-compatible ----------
+
+
+def test_retrieved_evidence_text_document_and_chunk_default_to_none() -> None:
+    """Source-metadata-only retrieval (no actual chunk content) never sets
+    these — they must default to None, not be required."""
+    evidence = RetrievedEvidence(citation=_citation())
+    assert evidence.text is None
+    assert evidence.document_id is None
+    assert evidence.chunk_id is None
+
+
+def test_retrieved_evidence_accepts_text_document_and_chunk_ids() -> None:
+    evidence = RetrievedEvidence(
+        citation=_citation(),
+        text="The DR is elected by priority, then router ID.",
+        document_id="doc-1",
+        chunk_id="chunk-1",
+    )
+    assert evidence.text == "The DR is elected by priority, then router ID."
+    assert evidence.document_id == "doc-1"
+    assert evidence.chunk_id == "chunk-1"
+
+
+def test_retrieved_evidence_rejects_empty_text() -> None:
+    with pytest.raises(ValidationError):
+        RetrievedEvidence(citation=_citation(), text="")
+
+
+def test_retrieved_evidence_old_shaped_payload_without_new_fields_still_validates() -> None:
+    """A JSON payload shaped like it predates this milestone (no text/
+    document_id/chunk_id keys at all) must still validate — existing
+    callers and stored payloads remain compatible."""
+    old_shaped_json = (
+        '{"citation": {"source_id": "src-1", "title": "Routing Concepts", '
+        '"location": null, "approved": false}, "relevance_score": 0.5, '
+        '"knowledge_pack": null, "knowledge_scope": null, "is_duplicate": null, '
+        '"is_superseded": null, "superseded_by_source_id": null}'
+    )
+    evidence = RetrievedEvidence.model_validate_json(old_shaped_json)
+    assert evidence.text is None
+    assert evidence.document_id is None
+    assert evidence.chunk_id is None
+    assert evidence.trusted_for_rag is None
+    assert evidence.relevance_score == 0.5
+
+
+def test_retrieved_evidence_json_round_trip_with_new_fields() -> None:
+    evidence = RetrievedEvidence(
+        citation=_citation(),
+        text="The DR is elected by priority, then router ID.",
+        document_id="doc-1",
+        chunk_id="chunk-1",
+        trusted_for_rag=True,
+    )
+    restored = RetrievedEvidence.model_validate_json(evidence.model_dump_json())
+    assert restored == evidence
+
+
+# --- trusted_for_rag: optional, distinct from citation.approved -------------
+
+
+def test_retrieved_evidence_trusted_for_rag_defaults_to_none() -> None:
+    """Source-metadata-only retrieval has no ContentChunk.trusted_for_rag
+    concept at all and must leave this unset, not default to False."""
+    evidence = RetrievedEvidence(citation=_citation())
+    assert evidence.trusted_for_rag is None
+
+
+def test_retrieved_evidence_exposes_trusted_for_rag_true() -> None:
+    evidence = RetrievedEvidence(citation=_citation(), trusted_for_rag=True)
+    assert evidence.trusted_for_rag is True
+
+
+def test_retrieved_evidence_exposes_trusted_for_rag_false() -> None:
+    evidence = RetrievedEvidence(citation=_citation(), trusted_for_rag=False)
+    assert evidence.trusted_for_rag is False
+
+
+def test_retrieved_evidence_approved_and_trusted_for_rag_are_independent() -> None:
+    """A citation can be approved while the evidence itself is not
+    trusted_for_rag — these are two distinct signals, never conflated."""
+    evidence = RetrievedEvidence(citation=_citation(approved=True), trusted_for_rag=False)
+    assert evidence.citation.approved is True
+    assert evidence.trusted_for_rag is False
+
+
 # --- EvidenceConflict -----------------------------------------------------
 
 

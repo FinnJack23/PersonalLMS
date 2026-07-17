@@ -12,6 +12,7 @@ from personal_lms.content import (
     ParentSourceMismatchError,
     SQLiteContentRepository,
 )
+from personal_lms.content.sqlite import _filter_clause
 from personal_lms.domain import (
     ContentChunk,
     CorpusDocument,
@@ -471,6 +472,124 @@ def test_list_chunks_filters_by_document_id(repo: SQLiteContentRepository) -> No
     chunks = repo.list_chunks(filters=ChunkSearchFilters(document_id="doc-1"))
 
     assert [c.chunk_id for c in chunks] == ["chunk-a"]
+
+
+# --- allowed_privacy_classifications: applied before LIMIT -----------------
+
+
+def test_search_allowed_privacy_classifications_filters_by_membership(
+    repo: SQLiteContentRepository,
+) -> None:
+    repo.upsert_document(_document())
+    repo.upsert_chunk(
+        _chunk(
+            chunk_id="chunk-public",
+            privacy_classification=PrivacyClassification.PUBLIC,
+        )
+    )
+    repo.upsert_chunk(
+        _chunk(
+            chunk_id="chunk-restricted",
+            ordinal=1,
+            privacy_classification=PrivacyClassification.RESTRICTED_LOCAL_ONLY,
+        )
+    )
+
+    hits = repo.search(
+        "OSPF",
+        filters=ChunkSearchFilters(
+            allowed_privacy_classifications=frozenset({PrivacyClassification.PUBLIC})
+        ),
+    )
+
+    assert [hit.chunk.chunk_id for hit in hits] == ["chunk-public"]
+
+
+def test_search_empty_allowed_privacy_classifications_matches_nothing(
+    repo: SQLiteContentRepository,
+) -> None:
+    repo.upsert_document(_document())
+    repo.upsert_chunk(_chunk(privacy_classification=PrivacyClassification.PUBLIC))
+
+    hits = repo.search(
+        "OSPF", filters=ChunkSearchFilters(allowed_privacy_classifications=frozenset())
+    )
+
+    assert hits == ()
+
+
+def test_privacy_filtering_is_applied_before_limit_not_after(
+    repo: SQLiteContentRepository,
+) -> None:
+    """Three more-restrictive chunks are inserted with chunk_ids that sort
+    before the one permitted chunk, so a naive "LIMIT first, filter
+    second" implementation would truncate the result set to only
+    disallowed chunks and never reach the permitted one. Applying the
+    filter in the SQL WHERE clause (before LIMIT) must still find it."""
+    repo.upsert_document(_document())
+    for ordinal, chunk_id in enumerate(("chunk-a", "chunk-b", "chunk-c")):
+        repo.upsert_chunk(
+            _chunk(
+                chunk_id=chunk_id,
+                ordinal=ordinal,
+                privacy_classification=PrivacyClassification.RESTRICTED_LOCAL_ONLY,
+            )
+        )
+    repo.upsert_chunk(
+        _chunk(
+            chunk_id="chunk-z",
+            ordinal=3,
+            privacy_classification=PrivacyClassification.PUBLIC,
+        )
+    )
+
+    hits = repo.search(
+        "OSPF",
+        filters=ChunkSearchFilters(
+            allowed_privacy_classifications=frozenset({PrivacyClassification.PUBLIC})
+        ),
+        limit=2,
+    )
+
+    assert [hit.chunk.chunk_id for hit in hits] == ["chunk-z"]
+
+
+def test_filter_clause_allowed_privacy_classifications_is_parameterized() -> None:
+    """White-box: the generated SQL fragment uses one ``?`` placeholder per
+    allowed value, with values bound as parameters — never interpolated
+    into the SQL text itself."""
+    filters = ChunkSearchFilters(
+        allowed_privacy_classifications=frozenset(
+            {PrivacyClassification.PUBLIC, PrivacyClassification.INTERNAL}
+        )
+    )
+
+    clause, params = _filter_clause(filters, table_alias="cc")
+
+    assert "cc.privacy_classification IN (?, ?)" in clause
+    assert "public" not in clause
+    assert "internal" not in clause
+    assert sorted(params) == ["internal", "public"]
+
+
+def test_filter_clause_single_allowed_privacy_classification_is_parameterized() -> None:
+    filters = ChunkSearchFilters(
+        allowed_privacy_classifications=frozenset({PrivacyClassification.RESTRICTED_LOCAL_ONLY})
+    )
+
+    clause, params = _filter_clause(filters, table_alias="cc")
+
+    assert "cc.privacy_classification IN (?)" in clause
+    assert params == ["restricted_local_only"]
+
+
+def test_filter_clause_empty_allowed_privacy_classifications_uses_no_params() -> None:
+    filters = ChunkSearchFilters(allowed_privacy_classifications=frozenset())
+
+    clause, params = _filter_clause(filters, table_alias="cc")
+
+    assert "1 = 0" in clause
+    assert params == []
 
 
 # --- page/section/timestamp citation mapping ---------------------------------

@@ -39,12 +39,23 @@ class ChunkSearchFilters:
     ``catalog.protocol.SourceSearchFilters``'s composable-filter shape.
     Knowledge-scope filters match if *any* of a chunk's ``knowledge_scopes``
     entries has that field set to the given value.
+
+    ``privacy_classification`` is an exact-match filter (equality only).
+    ``allowed_privacy_classifications`` is the multi-value alternative for
+    ceiling-style filtering ("this classification or anything less
+    restrictive") — set of exactly the classifications permitted, applied
+    as a SQL ``IN`` clause in the WHERE (so it narrows candidates before
+    ``LIMIT`` truncates, unlike Python-side post-filtering). An empty
+    (non-``None``) set means nothing is permitted, not "no filter" —
+    matches ``None``-means-unfiltered/empty-collection-means-nothing
+    conventions used throughout this codebase.
     """
 
     document_id: str | None = None
     source_id: str | None = None
     status: SourceProcessingStatus | None = None
     privacy_classification: PrivacyClassification | None = None
+    allowed_privacy_classifications: frozenset[PrivacyClassification] | None = None
     knowledge_domain: str | None = None
     certification: str | None = None
     course: str | None = None

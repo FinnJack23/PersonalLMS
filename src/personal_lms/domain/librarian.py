@@ -70,6 +70,26 @@ class RetrievedEvidence(StrictModel):
     never fabricate ``False`` (a truly-checked-and-clear result) merely
     because a check did not happen. Only a caller that has actually
     inspected relationship data may assert ``True`` or ``False``.
+
+    ``text``, ``document_id``, and ``chunk_id`` are all optional and
+    default to ``None`` — source-metadata-only retrieval paths (which have
+    no actual chunk content, just a citation) never set them, so existing
+    callers and JSON payloads remain unaffected. A content-chunk retrieval
+    path sets all three: ``text`` is the chunk's actual retrieved content,
+    and ``document_id``/``chunk_id`` preserve exactly which
+    ``CorpusDocument``/``ContentChunk`` it came from, alongside
+    ``citation.source_id`` for the ``SourceRecord``.
+
+    ``trusted_for_rag`` mirrors ``ContentChunk.trusted_for_rag`` and is
+    kept deliberately distinct from ``citation.approved``: the citation's
+    ``approved`` reflects the underlying chunk's/source's processing
+    *status*, while ``trusted_for_rag`` is the separate, stricter RAG-trust
+    gate (which additionally requires the parent document to be reviewed —
+    see ``content.sqlite.SQLiteContentRepository.upsert_chunk``). A piece
+    of evidence can be ``approved=True`` while ``trusted_for_rag=False``.
+    Defaults to ``None`` — a source-metadata-only retrieval path (no
+    ``ContentChunk`` involved at all) has no such concept to report and
+    leaves it unset, exactly like ``is_duplicate``/``is_superseded``.
     """
 
     citation: SourceCitation
@@ -79,6 +99,10 @@ class RetrievedEvidence(StrictModel):
     is_duplicate: bool | None = None
     is_superseded: bool | None = None
     superseded_by_source_id: str | None = Field(default=None, min_length=1)
+    text: str | None = Field(default=None, min_length=1)
+    document_id: str | None = Field(default=None, min_length=1)
+    chunk_id: str | None = Field(default=None, min_length=1)
+    trusted_for_rag: bool | None = None
 
 
 class EvidenceConflict(StrictModel):
