@@ -179,7 +179,7 @@ Responsibilities:
 - request approval before expensive, destructive, private, or publishing actions;
 - record approved results and next actions.
 
-The Personal Assistant must be implemented primarily as a Flow, not as an unconstrained autonomous agent.
+The Personal Assistant must be implemented primarily as a Flow, not as an unconstrained autonomous agent. Implementation is split across two layers: a framework-neutral application flow (`PersonalAssistantFlow`) that owns routing and provider execution and is independently testable without CrewAI installed, and a thin CrewAI orchestration adapter (`CrewAIPersonalAssistantFlow`) that runs it through CrewAI's `Flow` boundary and delegates every decision to it unchanged. Future specialist Crews are invoked only from controlled steps of the CrewAI adapter, never by embedding routing or provider logic in Crew/Task/Agent definitions. See ADR-0001.
 
 ### 5.2 Layer 2: Learning agents
 
