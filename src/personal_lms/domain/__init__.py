@@ -17,6 +17,17 @@ from personal_lms.domain.enums import (
     SourceRelationshipType,
     SourceType,
 )
+from personal_lms.domain.extraction import (
+    ExtractedArtifact,
+    ExtractionArtifactProvenance,
+    ExtractionCapability,
+    ExtractionFailure,
+    ExtractionJob,
+    ExtractionJobStatus,
+    ExtractionRequest,
+    ExtractionResult,
+    derive_artifact_id,
+)
 from personal_lms.domain.knowledge_scope import KnowledgeScope
 from personal_lms.domain.librarian import (
     EvidenceConflict,
@@ -40,6 +51,22 @@ from personal_lms.domain.obsidian import (
     ObsidianWriteResult,
 )
 from personal_lms.domain.privacy import PrivacyClassification
+from personal_lms.domain.promotion import (
+    CURRENT_MAPPING_VERSION,
+    PRIVACY_STRICTNESS_ORDER,
+    PromotionBlocker,
+    PromotionCandidate,
+    PromotionDecision,
+    PromotionDecisionOutcome,
+    PromotionEligibility,
+    PromotionEvent,
+    PromotionExecution,
+    PromotionExecutionState,
+    PromotionMapping,
+    PromotionResult,
+    derive_catalog_source_id,
+    derive_promotion_candidate_id,
+)
 from personal_lms.domain.reconstruction import (
     ObsidianArtifactLink,
     ReconstructedDocument,
@@ -77,6 +104,8 @@ from personal_lms.domain.tutor import (
 from personal_lms.domain.vault import VaultNoteDraft
 
 __all__ = [
+    "CURRENT_MAPPING_VERSION",
+    "PRIVACY_STRICTNESS_ORDER",
     "AgentRequest",
     "AgentResponse",
     "ApprovalActionType",
@@ -91,6 +120,14 @@ __all__ = [
     "CostClass",
     "DrillRecommendation",
     "EvidenceConflict",
+    "ExtractedArtifact",
+    "ExtractionArtifactProvenance",
+    "ExtractionCapability",
+    "ExtractionFailure",
+    "ExtractionJob",
+    "ExtractionJobStatus",
+    "ExtractionRequest",
+    "ExtractionResult",
     "GroundingBundle",
     "KnowledgeScope",
     "LatencyClass",
@@ -113,6 +150,16 @@ __all__ = [
     "ObsidianWriteRejection",
     "ObsidianWriteResult",
     "PrivacyClassification",
+    "PromotionBlocker",
+    "PromotionCandidate",
+    "PromotionDecision",
+    "PromotionDecisionOutcome",
+    "PromotionEligibility",
+    "PromotionEvent",
+    "PromotionExecution",
+    "PromotionExecutionState",
+    "PromotionMapping",
+    "PromotionResult",
     "ProvenanceMetadata",
     "ReconstructedDocument",
     "ReconstructionCandidate",
@@ -144,6 +191,9 @@ __all__ = [
     "TeachingResponse",
     "TutorTeachingRequest",
     "VaultNoteDraft",
+    "derive_artifact_id",
+    "derive_catalog_source_id",
+    "derive_promotion_candidate_id",
     "derive_source_id",
     "normalize_locator",
 ]
