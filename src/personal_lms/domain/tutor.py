@@ -57,13 +57,17 @@ class CitationIntegrityStatus(StrEnum):
     that a substantive answer contains at least one such citation — never a
     semantic or factual-correctness judgment (that remains the future
     Source Verifier's job, out of scope here; see
-    ``personal_lms.tutor.evidence_checked`` for the verification this
-    status records).
+    ``personal_lms.tutor._generation`` for the verification this status
+    records, shared by ``EvidenceCheckedTutorService`` and
+    ``TutorTeachingCoordinator``).
 
-    ``NOT_APPLICABLE`` means no generation happened at all (e.g. grounding
-    was insufficient or no provider was eligible), so citation-integrity
-    checking never ran — distinct from ``FAILED``, which means checking
-    ran and rejected the draft.
+    ``NOT_APPLICABLE`` means citation-integrity checking never ran, for
+    either of two reasons: no generation happened at all (e.g. grounding
+    was insufficient or no provider was eligible), or generation happened
+    but with no evidence to verify against at all (the general-knowledge
+    mode, which never claims verified citation integrity) — distinct from
+    ``FAILED``, which means checking ran, evidence was supplied, and the
+    draft was rejected.
     """
 
     NOT_APPLICABLE = "not_applicable"
