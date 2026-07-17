@@ -24,6 +24,7 @@ Paid API used only after policy approval.
 - task category;
 - source trust level;
 - privacy classification;
+- RAG grounding-bundle availability and quality;
 - image/vision requirement;
 - estimated context size;
 - required structured output;
@@ -57,22 +58,32 @@ fallbacks:
 1. Determine whether a deterministic service can complete the task.
 2. Classify privacy and prohibited transmission.
 3. Check local-only mode.
-4. Check local model health and capability.
-5. Attempt local processing.
-6. Validate output against schema and deterministic checks.
-7. Retry locally only within bounded policy.
-8. Evaluate hosted escalation eligibility.
-9. Check budget and approval thresholds.
-10. Redact and minimize context.
-11. Execute hosted call and record audit event.
-12. Return result with model-tier provenance.
+4. Retrieve grounding evidence from the RAG knowledge plane (hybrid keyword + vector + metadata) when the task is source-grounded.
+5. Check local model health and capability.
+6. Attempt local processing, constrained to the grounding bundle when one exists.
+7. Validate output against schema and deterministic checks.
+8. Retry locally only within bounded policy.
+9. Evaluate hosted escalation eligibility.
+10. Check budget and approval thresholds.
+11. Redact and minimize context to the selected grounding-bundle evidence.
+12. Execute hosted call and record audit event.
+13. Return result with model-tier provenance.
 
 ## Privacy classes
 
 - `public` — eligible for hosted routing.
-- `private_low` — hosted only after minimization and policy.
-- `private_restricted` — local only.
-- `secret` — never included in model prompts; handled by deterministic services or omitted.
+- `internal` — eligible for hosted routing after minimization and policy review.
+- `sensitive` — hosted only after minimization, redaction, and explicit approval.
+- `restricted_local_only` — never eligible for hosted routing, including as retrieved RAG evidence. Handled by local inference and deterministic services only.
+
+These match the `PrivacyClassification` domain schema (`src/personal_lms/domain/privacy.py`).
+
+## RAG retrieval and grounding
+
+- RAG retrieval always runs before hosted escalation is evaluated (see decision order above) — hosted tiers see a grounding bundle, never a bare prompt.
+- The grounding bundle is filtered by privacy classification before hosted eligibility is checked; `restricted_local_only` chunks are dropped from the bundle, not redacted after the fact.
+- Only the minimal, redacted evidence needed for the specific escalation reason may be forwarded to a hosted provider — never the full retrieved set.
+- Retrieval, and therefore grounding, can be scoped to one or more knowledge packs; the router does not assume a single active domain (see `docs/product-specs/RAG_KNOWLEDGE_PLANE.md`).
 
 ## Initial restricted examples
 

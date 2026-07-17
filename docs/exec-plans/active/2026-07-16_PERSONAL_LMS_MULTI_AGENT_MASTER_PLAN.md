@@ -103,6 +103,10 @@ SQLite initially stores source inventory, queues, run state, agent events, budge
 
 Model providers are interchangeable inference backends selected by capability and policy.
 
+### 3.7 RAG knowledge plane
+
+RAG is not an agent, not a model provider, and not a replacement for Obsidian. It is the knowledge plane: hybrid retrieval, grounding, and provenance, sitting between the agent plane and the data plane. It is domain-neutral — one reusable RAG platform serving many independently governed knowledge packs (CCNA first, CompTIA A+ next), not a mechanism hard-coded to a single certification. See `docs/decisions/ADR-0004_RAG_AS_THE_KNOWLEDGE_PLANE.md` and `docs/product-specs/RAG_KNOWLEDGE_PLANE.md`.
+
 ---
 
 ## 4. Target architecture
@@ -115,6 +119,8 @@ Personal LMS UI
   |
   v
 Personal Assistant Flow
+  |
+  +--> RAG knowledge plane (hybrid retrieval and grounding, many knowledge packs)
   |
   +--> Tier 0 deterministic services
   |
@@ -130,6 +136,8 @@ Personal Assistant Flow
   |
   +--> Optional lab/tool integrations
 ```
+
+The system has five planes: orchestration (Flows, Personal Assistant), agent (specialists), knowledge (RAG), model (Tier 0/1/2), and data (Obsidian, raw archive, SQLite catalog, FTS5 index, vector index). See `docs/decisions/ADR-0004_RAG_AS_THE_KNOWLEDGE_PLANE.md`.
 
 ### Deployment target
 
@@ -182,7 +190,8 @@ The Personal Assistant must be implemented primarily as a Flow, not as an uncons
 - checks understanding rather than only delivering an answer;
 - adapts the explanation after errors;
 - distinguishes memorization from conceptual mastery;
-- maps learning to CCNA, D419, KCNA, LFCS, and later objectives.
+- maps learning to CCNA, D419, KCNA, LFCS, and later objectives;
+- consumes RAG grounding bundles as primary evidence when one is available.
 
 #### Drill Master
 
@@ -191,7 +200,8 @@ The Personal Assistant must be implemented primarily as a Flow, not as an uncons
 - avoids leaking answers before response;
 - tracks misses and recurring traps;
 - generates review queues from approved source material;
-- supports multiple-choice, short answer, CLI completion, topology reasoning, and troubleshooting drills.
+- supports multiple-choice, short answer, CLI completion, topology reasoning, and troubleshooting drills;
+- draws question material from RAG grounding bundles, never from unreviewed candidate content.
 
 #### Lab Coach
 
@@ -238,6 +248,7 @@ The Personal Assistant must be implemented primarily as a Flow, not as an uncons
 - searches the source catalog and curated vault;
 - resolves titles, versions, and duplicates;
 - retrieves the smallest useful source set;
+- requests hybrid RAG retrieval (keyword + vector + metadata), optionally across knowledge packs (see `docs/product-specs/RAG_KNOWLEDGE_PLANE.md`);
 - provides provenance and source locations;
 - never treats unreviewed archive material as trusted knowledge.
 
@@ -247,7 +258,8 @@ The Personal Assistant must be implemented primarily as a Flow, not as an uncons
 - compares duplicates and revised editions;
 - recommends promotion, rejection, supersession, or deferral;
 - prevents the vault from becoming an unfiltered archive;
-- prioritizes official, current, practical, and unique sources.
+- prioritizes official, current, practical, and unique sources;
+- approval is also the gate for RAG trusted-corpus membership, evaluated per knowledge pack.
 
 #### Archivist
 
@@ -386,6 +398,7 @@ The model router should evaluate:
 
 - deterministic validation results;
 - source availability and trust level;
+- RAG grounding-bundle availability and quality;
 - task complexity;
 - privacy classification;
 - local context-window fit;
@@ -395,7 +408,7 @@ The model router should evaluate:
 - cost policy;
 - explicit user preference.
 
-Do not rely only on a model's self-reported confidence.
+Do not rely only on a model's self-reported confidence. RAG retrieval always runs before hosted escalation is evaluated — hosted calls see a grounding bundle, never a bare prompt (see `docs/product-specs/RAG_KNOWLEDGE_PLANE.md`).
 
 Example conditions:
 
@@ -535,8 +548,11 @@ Raw archive
   -> review queue
   -> approved promotion
   -> Obsidian concepts and learning artifacts
+  -> RAG chunk/embed/index, per knowledge pack (derived, rebuildable)
   -> drills, labs, reviews, and progress tracking
 ```
+
+Indexing is downstream of promotion and never a substitute for it — see `docs/product-specs/RAG_KNOWLEDGE_PLANE.md`.
 
 ### 8.4 Source-quality scoring
 
@@ -632,6 +648,7 @@ personal-lms/
 │   ├── policies/
 │   ├── schemas/
 │   ├── catalog/
+│   ├── rag/
 │   ├── vault/
 │   ├── api/
 │   └── observability/
@@ -901,7 +918,8 @@ Create the foundation for the 1,000 PDFs, videos, and thousands of URLs.
 - extraction job queue;
 - Curator scoring and review states;
 - source card template;
-- candidate-versus-canonical separation.
+- candidate-versus-canonical separation;
+- knowledge-pack registration for the sources being cataloged (see `docs/product-specs/RAG_KNOWLEDGE_PLANE.md`).
 
 ### Exit criteria
 
@@ -930,7 +948,8 @@ Build prioritized processing pipelines without attempting to finish the full bac
 - transcription only when needed;
 - timestamps and chapters;
 - selected keyframes when useful;
-- no automatic full raw transcript promotion.
+- no automatic full raw transcript promotion;
+- promoted, chunked output becomes eligible for RAG embedding and indexing within its knowledge pack once curator-approved.
 
 ### URL requirements
 
@@ -1140,7 +1159,10 @@ No two agents edit the same branch or worktree concurrently.
 - CLI syntax correctness;
 - hallucination and unsupported-claim rate;
 - local-versus-hosted comparison;
-- escalation precision.
+- escalation precision;
+- retrieval precision/recall against a curated corpus, per knowledge pack;
+- grounding faithfulness — generated claims traceable to their grounding bundle;
+- base Qwen vs. Qwen+RAG vs. LoRA Qwen vs. LoRA Qwen+RAG comparison (portfolio evaluation suite; see section 20).
 
 ### Security tests
 
@@ -1170,6 +1192,9 @@ No two agents edit the same branch or worktree concurrently.
 | Source archive overwhelms processing | queue, prioritization, resumability, representative acceptance batch |
 | Local model is too slow or weak | capability profiles, smaller routing model, optional larger local model, hosted escalation |
 | Prompt injection in PDFs/web content | treat sources as data, isolate instructions, tool permissions, output validation |
+| RAG index drifts from the curated vault | index is derived and fully rebuildable from Obsidian plus the SQLite catalog; never treated as source of truth |
+| Hosted escalation leaks restricted material via retrieved evidence | privacy classification filters the grounding bundle before hosted eligibility is checked; `restricted_local_only` chunks are dropped, not redacted |
+| A single knowledge pack's assumptions leak into the shared RAG platform | generic source/chunk/citation models with no domain-specific required fields; new domains added by registering a knowledge pack, not by changing core interfaces |
 
 ---
 
@@ -1189,7 +1214,7 @@ Obsidian is the durable source of reviewed learning knowledge. Runtime state and
 
 ### ADR-0004
 
-Use Tier 0 deterministic Python, Tier 1 local Qwen/Ollama, and Tier 2 hosted API escalation.
+RAG is the knowledge plane — hybrid retrieval, grounding, and provenance — distinct from the agent, orchestration, model, and data planes, and never a replacement for Obsidian. RAG is domain-neutral: one reusable RAG platform serves many independently governed knowledge packs, with CCNA as the first production vertical and CompTIA A+ as the next planned pack. See `docs/decisions/ADR-0004_RAG_AS_THE_KNOWLEDGE_PLANE.md`.
 
 ### ADR-0005
 
@@ -1198,6 +1223,10 @@ Use SQLite for initial catalogs and state. Reassess only after measured scaling 
 ### ADR-0006
 
 The canonical project root is `/home/ajsch/projects/personal-lms`. Claude and Codex may view the same root; parallel writers use worktrees.
+
+### ADR-0007
+
+Use Tier 0 deterministic Python, Tier 1 local Qwen/Ollama, and Tier 2 hosted API escalation.
 
 ---
 
@@ -1241,3 +1270,13 @@ Validated against official project documentation available on 2026-07-16:
 ## 19. Final success condition
 
 The project succeeds when Alan can open one local interface, ask for a learning outcome, receive a source-grounded response from the appropriate agents, drill the concept, perform a practical lab when relevant, and store a reviewed, portable record in Obsidian—mostly using local Qwen, with paid APIs invoked only when their added quality is justified.
+
+---
+
+## 20. Portfolio objective: CCNA Evidence-Checked Tutor
+
+Design and implement a local-first CCNA Evidence-Checked Tutor that uses approved RAG sources, deterministic networking validation, local Qwen generation, citation verification, weak-area tracking, and controlled hosted API escalation. Later compare base Qwen, Qwen with RAG, LoRA Qwen, and LoRA Qwen with RAG using a reproducible evaluation suite.
+
+This is the first reference application built on the domain-neutral RAG platform (see section 3.7, `docs/decisions/ADR-0004_RAG_AS_THE_KNOWLEDGE_PLANE.md`, and `docs/product-specs/RAG_KNOWLEDGE_PLANE.md`) — **one reusable RAG platform, many independently governed knowledge domains.** CCNA is the first production vertical and portfolio demonstration, not a hard-coded limitation. CompTIA A+ Core 1/Core 2 is the next planned knowledge pack, chosen specifically because it is structurally different from networking (hardware/OS/troubleshooting rather than protocols) — a real test of whether new domains can be added by registering a knowledge pack rather than by changing core retrieval, grounding, or citation interfaces.
+
+Fine-tuning (LoRA) is a later behavioral-optimization step layered on top of RAG, not a substitute for it. The evaluation suite exists to make that distinction measurable rather than asserted: citation accuracy and hallucination rate should improve from RAG, and separately from LoRA, in ways that can be shown, not just claimed.

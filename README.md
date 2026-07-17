@@ -26,6 +26,9 @@ Open this same root folder in Claude Code and Codex for shared visibility. Do no
    `docs/handoffs/2026-07-16_CLAUDE_NIGHT_RUN.md`
 5. When Claude is unavailable or rate-limited, use:
    `docs/handoffs/QWEN_WORK_QUEUE.md`
+6. For the RAG knowledge plane, read:
+   `docs/product-specs/RAG_KNOWLEDGE_PLANE.md` and
+   `docs/decisions/ADR-0004_RAG_AS_THE_KNOWLEDGE_PLANE.md`
 
 ## Core decisions
 
@@ -36,6 +39,8 @@ Open this same root folder in Claude Code and Codex for shared visibility. Do no
 - Hosted APIs are escalation resources, not the default.
 - Python services handle deterministic work without an LLM.
 - Obsidian is the durable learning knowledge store.
+- RAG is the knowledge plane: one reusable retrieval platform serving many independently governed knowledge packs (CCNA first, A+ next), never a replacement for Obsidian.
+- The RAG keyword and vector indexes are derived and fully rebuildable; only curator-approved sources enter any knowledge pack's trusted corpus.
 - SQLite is the initial source catalog and runtime state store.
 - Raw PDFs, videos, and archives remain outside the curated vault.
 - Catalog everything; curate selectively; promote only the best sources.

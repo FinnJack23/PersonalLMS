@@ -42,6 +42,17 @@ Rules:
 - manual edits preserved;
 - promotion requires approval.
 
+### RAG index (derived, rebuildable)
+
+The SQLite FTS5 keyword index and the planned Qdrant vector index are a read path over the curated vault, not a fourth storage class. One reusable RAG platform serves many independently governed knowledge packs — see `docs/product-specs/RAG_KNOWLEDGE_PLANE.md`.
+
+Rules:
+
+- built only from curator-approved, promoted vault content — never from raw archive or candidate data directly;
+- scoped per knowledge pack, and fully rebuildable within a pack or globally: deleting an index and re-running chunk -> embed -> index against currently-promoted content must restore equivalent retrieval behavior;
+- never treated as the source of truth for any fact, citation, or promotion status;
+- indexed chunks carry the same provenance (page, section, URL, or timestamp) as their source note.
+
 ## Proposed vault tree
 
 ```text
@@ -70,6 +81,7 @@ Rules:
 6. Audit record stores before/after hash.
 7. Human reviews candidate.
 8. Promotion moves content to a canonical location through a separate approved action.
+9. Promoted content becomes eligible for RAG indexing (chunk, embed, index) as a derived artifact within its knowledge pack — see `docs/product-specs/RAG_KNOWLEDGE_PLANE.md`.
 
 ## Source frontmatter example
 
