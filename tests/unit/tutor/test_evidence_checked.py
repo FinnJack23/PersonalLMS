@@ -20,12 +20,19 @@ from personal_lms.domain import (
     SourceProcessingStatus,
     TutorTeachingRequest,
 )
-from personal_lms.domain.models import ModelRequest, ModelResult
+from personal_lms.domain.enums import CostClass, LatencyClass
+from personal_lms.domain.models import ModelCapabilityProfile, ModelRequest, ModelResult
 from personal_lms.librarian import LibrarianContentGroundingService
+from personal_lms.policies.errors import RoutingError
 from personal_lms.policies.router import DeterministicRouter
 from personal_lms.providers import FakeHostedProvider, FakeLocalProvider, ProviderRegistry
-from personal_lms.providers.errors import ProviderExecutionError
+from personal_lms.providers.errors import ProviderError, ProviderExecutionError
 from personal_lms.tutor import EvidenceCheckedTutorService
+from personal_lms.tutor._generation import (
+    NoEligibleProviderError,
+    ProviderFailedError,
+    route_and_generate,
+)
 
 _VALID_SHA256 = "a" * 64
 
@@ -563,6 +570,93 @@ def test_provider_failure_produces_a_typed_safe_response(
     assert response.citation_integrity_status is CitationIntegrityStatus.NOT_APPLICABLE
     assert response.refusal_reason is not None
     assert "provider" in response.refusal_reason
+
+
+# --- APPROVAL_REQUIRED routing outcome (preflight check) --------------------
+#
+# DeterministicRouter.route() returns *normally* (no exception) with
+# RoutingResult(decision=RoutingDecision(outcome=APPROVAL_REQUIRED), provider=None)
+# when budget policy requires approval for hosted routing. This section
+# proves _generation.route_and_generate() and EvidenceCheckedTutorService.teach()
+# both treat that outcome correctly: no provider call, not misclassified as
+# a RoutingError or a ProviderError, and a safe, gap-preserving refusal.
+
+
+def _hosted_profile_for(privacy: PrivacyClassification) -> ModelCapabilityProfile:
+    return ModelCapabilityProfile(
+        profile_id="hosted-approval-required",
+        max_context_tokens=4096,
+        is_local=False,
+        max_privacy_classification=privacy,
+        latency_class=LatencyClass.STANDARD,
+        cost_class=CostClass.MEDIUM,
+    )
+
+
+def test_route_and_generate_raises_no_eligible_provider_for_approval_required() -> None:
+    """White-box: route() itself must not raise, provider.generate() must
+    never be called, and the resulting exception must be
+    NoEligibleProviderError specifically — never RoutingError or
+    ProviderError (route_and_generate's two try/except blocks structurally
+    cannot misclassify this, since the APPROVAL_REQUIRED branch is reached
+    only after route() already returned normally, before either except
+    clause could ever run)."""
+    hosted = _CapturingProvider(
+        FakeHostedProvider(
+            capability_profiles=(_hosted_profile_for(PrivacyClassification.INTERNAL),)
+        )
+    )
+    registry = ProviderRegistry()
+    registry.register(hosted)  # type: ignore[arg-type]
+    router = DeterministicRouter(registry)
+    budget_policy = _budget_policy(automatic_single_call_limit_usd=Decimal("0"))
+    model_request = ModelRequest(
+        capability_profile="tutor_evidence_checked",
+        prompt="Explain OSPF DR election using only the supplied evidence.",
+        privacy_classification=PrivacyClassification.INTERNAL,
+    )
+
+    # route() itself must return without raising.
+    routing_result = router.route(model_request, budget_policy=budget_policy)
+    assert routing_result.provider is None
+
+    with pytest.raises(NoEligibleProviderError) as exc_info:
+        asyncio.run(route_and_generate(router, budget_policy, model_request))
+
+    assert not isinstance(exc_info.value, RoutingError)
+    assert not isinstance(exc_info.value, ProviderError)
+    assert not isinstance(exc_info.value, ProviderFailedError)
+    assert hosted.requests == []
+
+
+def test_teach_reports_a_safe_gap_preserving_refusal_for_approval_required(
+    repo: SQLiteContentRepository, grounding_service: LibrarianContentGroundingService
+) -> None:
+    repo.upsert_document(_document())
+    repo.upsert_chunk(_chunk(text="The OSPF DR election is decided by priority, then router ID."))
+    hosted = _CapturingProvider(
+        FakeHostedProvider(
+            capability_profiles=(_hosted_profile_for(PrivacyClassification.INTERNAL),)
+        )
+    )
+    registry = ProviderRegistry()
+    registry.register(hosted)  # type: ignore[arg-type]
+    router = DeterministicRouter(registry)
+    service = EvidenceCheckedTutorService(grounding_service, router)
+    budget_policy = _budget_policy(automatic_single_call_limit_usd=Decimal("0"))
+
+    response = asyncio.run(service.teach(_teaching_request(), budget_policy=budget_policy))
+
+    assert hosted.requests == []
+    assert response.citations == []
+    assert response.grounding_is_sufficient is True
+    assert response.retrieval_gaps == []
+    assert response.citation_integrity_status is CitationIntegrityStatus.NOT_APPLICABLE
+    assert response.refusal_reason is not None
+    assert "no eligible" in response.refusal_reason
+    assert "provider failed" not in response.refusal_reason
+    assert "OSPF" not in response.refusal_reason
+    assert "priority" not in response.refusal_reason
 
 
 # --- domain neutrality --------------------------------------------------------
