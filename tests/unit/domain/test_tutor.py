@@ -6,9 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from personal_lms.domain import (
+    CitationIntegrityStatus,
     DrillRecommendation,
     GroundingBundle,
     KnowledgeScope,
+    PrivacyClassification,
     SourceCitation,
     TeachingResponse,
     TutorTeachingRequest,
@@ -93,6 +95,99 @@ def test_teaching_request_json_round_trip() -> None:
     )
     restored = TutorTeachingRequest.model_validate_json(request.model_dump_json())
     assert restored == request
+
+
+# --- retrieve_grounding: explicit third grounding mode ----------------------
+
+
+def test_teaching_request_accepts_retrieve_grounding_without_acknowledgement() -> None:
+    """retrieve_grounding=True is its own valid mode — it must not require,
+    and must not be satisfied by, general_knowledge_acknowledged=True."""
+    request = TutorTeachingRequest(
+        agent_request_id=uuid4(),
+        learning_objective="Explain OSPF DR election",
+        retrieve_grounding=True,
+    )
+    assert request.retrieve_grounding is True
+    assert request.general_knowledge_acknowledged is False
+    assert request.grounding_bundle is None
+
+
+def test_teaching_request_rejects_bundle_and_acknowledgement_together() -> None:
+    with pytest.raises(ValidationError):
+        TutorTeachingRequest(
+            agent_request_id=uuid4(),
+            learning_objective="x",
+            grounding_bundle=_grounding_bundle(),
+            general_knowledge_acknowledged=True,
+        )
+
+
+def test_teaching_request_rejects_bundle_and_retrieve_grounding_together() -> None:
+    with pytest.raises(ValidationError):
+        TutorTeachingRequest(
+            agent_request_id=uuid4(),
+            learning_objective="x",
+            grounding_bundle=_grounding_bundle(),
+            retrieve_grounding=True,
+        )
+
+
+def test_teaching_request_rejects_acknowledgement_and_retrieve_grounding_together() -> None:
+    with pytest.raises(ValidationError):
+        TutorTeachingRequest(
+            agent_request_id=uuid4(),
+            learning_objective="x",
+            general_knowledge_acknowledged=True,
+            retrieve_grounding=True,
+        )
+
+
+def test_teaching_request_rejects_all_three_modes_together() -> None:
+    with pytest.raises(ValidationError):
+        TutorTeachingRequest(
+            agent_request_id=uuid4(),
+            learning_objective="x",
+            grounding_bundle=_grounding_bundle(),
+            general_knowledge_acknowledged=True,
+            retrieve_grounding=True,
+        )
+
+
+def test_teaching_request_old_shaped_payload_without_new_fields_still_validates() -> None:
+    """A JSON payload shaped like it predates this correction (no
+    retrieve_grounding/privacy_classification keys at all) must still
+    validate, defaulting to retrieve_grounding=False and the
+    previously-implicit INTERNAL privacy ceiling."""
+    old_shaped_json = (
+        '{"request_id": "' + str(uuid4()) + '", "agent_request_id": "' + str(uuid4()) + '", '
+        '"learning_objective": "x", "grounding_bundle": null, '
+        '"general_knowledge_acknowledged": true, "knowledge_scope": null, '
+        '"created_at": "2026-01-01T00:00:00Z"}'
+    )
+    request = TutorTeachingRequest.model_validate_json(old_shaped_json)
+    assert request.retrieve_grounding is False
+    assert request.privacy_classification is PrivacyClassification.INTERNAL
+
+
+# --- privacy_classification: defaults to INTERNAL, backward-compatible ------
+
+
+def test_teaching_request_privacy_classification_defaults_to_internal() -> None:
+    request = TutorTeachingRequest(
+        agent_request_id=uuid4(), learning_objective="x", retrieve_grounding=True
+    )
+    assert request.privacy_classification is PrivacyClassification.INTERNAL
+
+
+def test_teaching_request_accepts_explicit_privacy_classification() -> None:
+    request = TutorTeachingRequest(
+        agent_request_id=uuid4(),
+        learning_objective="x",
+        retrieve_grounding=True,
+        privacy_classification=PrivacyClassification.RESTRICTED_LOCAL_ONLY,
+    )
+    assert request.privacy_classification is PrivacyClassification.RESTRICTED_LOCAL_ONLY
 
 
 # --- TeachingResponse -------------------------------------------------------
@@ -224,6 +319,78 @@ def test_teaching_response_json_round_trip() -> None:
         confidence=0.85,
         objective_mappings=[KnowledgeScope(certification="CCNA")],
         follow_up_drills=[DrillRecommendation(reason="reinforce", topic="OSPF")],
+    )
+    restored = TeachingResponse.model_validate_json(response.model_dump_json())
+    assert restored == response
+
+
+# --- grounding_is_sufficient / citation_integrity_status / retrieval_gaps /
+#     refusal_reason: optional, backward-compatible -------------------------
+
+
+def test_teaching_response_old_shaped_payload_without_new_fields_still_validates() -> None:
+    """A JSON payload shaped like it predates this milestone (no
+    grounding_is_sufficient/citation_integrity_status/retrieval_gaps/
+    refusal_reason keys at all) must still validate."""
+    old_shaped_json = (
+        '{"response_id": "' + str(uuid4()) + '", "request_id": "' + str(uuid4()) + '", '
+        '"learning_objective": "x", "explanation": "y", "example": null, '
+        '"comprehension_check": null, "detected_misconception": null, '
+        '"citations": [], "grounded_in_general_knowledge": true, "confidence": 0.5, '
+        '"objective_mappings": [], "memory_cues": [], "commands": [], '
+        '"follow_up_drills": [], "recommended_next_step": null, '
+        '"created_at": "2026-01-01T00:00:00Z"}'
+    )
+    response = TeachingResponse.model_validate_json(old_shaped_json)
+    assert response.grounding_is_sufficient is None
+    assert response.citation_integrity_status is None
+    assert response.retrieval_gaps == []
+    assert response.refusal_reason is None
+
+
+def test_teaching_response_exposes_grounding_and_citation_integrity_fields() -> None:
+    response = TeachingResponse(
+        request_id=uuid4(),
+        learning_objective="Explain OSPF DR election",
+        explanation="The DR is elected by priority, then router ID.",
+        citations=[_citation()],
+        confidence=1.0,
+        grounding_is_sufficient=True,
+        citation_integrity_status=CitationIntegrityStatus.VERIFIED,
+        retrieval_gaps=[],
+    )
+    assert response.grounding_is_sufficient is True
+    assert response.citation_integrity_status is CitationIntegrityStatus.VERIFIED
+    assert response.refusal_reason is None
+
+
+def test_teaching_response_records_a_deterministic_refusal() -> None:
+    response = TeachingResponse(
+        request_id=uuid4(),
+        learning_objective="Explain OSPF DR election",
+        explanation="This question cannot be answered from approved, trusted sources.",
+        grounded_in_general_knowledge=True,
+        confidence=0.0,
+        grounding_is_sufficient=False,
+        citation_integrity_status=CitationIntegrityStatus.NOT_APPLICABLE,
+        retrieval_gaps=["no permitted content chunks matched the query: 'x'"],
+        refusal_reason="insufficient approved, trusted evidence was retrieved",
+    )
+    assert response.citations == []
+    assert response.refusal_reason is not None
+    assert response.retrieval_gaps == ["no permitted content chunks matched the query: 'x'"]
+
+
+def test_teaching_response_json_round_trip_with_new_fields() -> None:
+    response = TeachingResponse(
+        request_id=uuid4(),
+        learning_objective="Explain OSPF DR election",
+        explanation="The DR is elected by priority, then router ID.",
+        citations=[_citation()],
+        confidence=1.0,
+        grounding_is_sufficient=True,
+        citation_integrity_status=CitationIntegrityStatus.VERIFIED,
+        retrieval_gaps=["a gap"],
     )
     restored = TeachingResponse.model_validate_json(response.model_dump_json())
     assert restored == response

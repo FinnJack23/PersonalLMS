@@ -48,7 +48,12 @@ from personal_lms.domain.reconstruction import (
 )
 from personal_lms.domain.routing import RoutingDecision
 from personal_lms.domain.runs import RunState
-from personal_lms.domain.tutor import DrillRecommendation, TeachingResponse, TutorTeachingRequest
+from personal_lms.domain.tutor import (
+    CitationIntegrityStatus,
+    DrillRecommendation,
+    TeachingResponse,
+    TutorTeachingRequest,
+)
 from personal_lms.domain.vault import VaultNoteDraft
 
 __all__ = [
@@ -58,6 +63,7 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalStatus",
     "BudgetPolicy",
+    "CitationIntegrityStatus",
     "ContentChunk",
     "CorpusDocument",
     "CostClass",
