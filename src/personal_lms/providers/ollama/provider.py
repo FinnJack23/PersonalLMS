@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from personal_lms.providers.ollama.errors import OllamaExtraNotInstalledError
 
@@ -56,6 +56,83 @@ class OllamaModelSummary:
     family: str | None
 
 
+@runtime_checkable
+class OllamaChatClient(Protocol):
+    """Package-private boundary for the single Ollama operation
+    ``OllamaProvider.generate()`` needs.
+
+    Never exposed through the public ``ModelProvider`` API — this exists
+    only so tests can inject a pure-Python fake implementing exactly this
+    one async method, in place of an ``httpx.AsyncClient``/
+    ``httpx.MockTransport`` pair, for fully deterministic ``generate()``
+    coverage. ``provider.py`` itself still requires ``httpx`` to import at
+    all (see the module-level ``OllamaExtraNotInstalledError`` handling
+    above) — that existing, deliberate optional-dependency boundary is
+    unchanged; this Protocol only narrows what ``generate()`` itself
+    depends on, so the production ``_HttpxChatClient`` and any test fake
+    share one call shape.
+    """
+
+    async def chat(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        stream: bool,
+        options: dict[str, Any],
+        keep_alive: str | None,
+    ) -> dict[str, Any]: ...
+
+
+class _HttpxChatClient:
+    """Default ``OllamaChatClient``, backed by the provider's own ``httpx.AsyncClient``.
+
+    Byte-for-byte the same ``POST /api/chat`` request shape and error
+    mapping ``OllamaProvider.generate()`` always sent — moved here
+    unchanged so it can be swapped out via constructor injection.
+    """
+
+    def __init__(
+        self, client: httpx.AsyncClient, *, provider_id: str, timeout_seconds: float
+    ) -> None:
+        self._client = client
+        self._provider_id = provider_id
+        self._timeout_seconds = timeout_seconds
+
+    async def chat(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        stream: bool,
+        options: dict[str, Any],
+        keep_alive: str | None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": stream,
+            "think": False,
+            "options": options,
+        }
+        if keep_alive is not None:
+            payload["keep_alive"] = keep_alive
+
+        try:
+            response = await self._client.request("POST", "/api/chat", json=payload)
+        except httpx.TimeoutException as exc:
+            raise ProviderTimeoutError(self._provider_id, self._timeout_seconds) from exc
+        except httpx.TransportError as exc:
+            raise ProviderUnavailableError(self._provider_id, "connection failed") from exc
+
+        if response.status_code >= 400:
+            raise ProviderExecutionError(
+                self._provider_id, f"generate received HTTP {response.status_code}"
+            )
+        result: dict[str, Any] = response.json()
+        return result
+
+
 class OllamaProvider:
     """Local Ollama inference provider. Structurally conforms to ``ModelProvider``.
 
@@ -72,11 +149,15 @@ class OllamaProvider:
         config: OllamaProviderConfig,
         *,
         client: httpx.AsyncClient | None = None,
+        chat_client: OllamaChatClient | None = None,
     ) -> None:
         self._config = config
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             base_url=config.base_url, timeout=config.timeout_seconds
+        )
+        self._chat_client = chat_client or _HttpxChatClient(
+            self._client, provider_id=config.provider_id, timeout_seconds=config.timeout_seconds
         )
         self._profile = ModelCapabilityProfile(
             profile_id=config.provider_id,
@@ -156,22 +237,20 @@ class OllamaProvider:
         return any(summary.name == target for summary in installed)
 
     async def generate(self, request: ModelRequest) -> ModelResult:
-        payload: dict[str, Any] = {
-            "model": self._config.model,
-            "messages": [{"role": "user", "content": request.prompt}],
-            "stream": False,
-            "think": False,
-            "options": {"temperature": self._config.temperature},
-        }
+        options: dict[str, Any] = {"temperature": self._config.temperature}
         if self._config.seed is not None:
-            payload["options"]["seed"] = self._config.seed
-        if self._config.keep_alive is not None:
-            payload["keep_alive"] = self._config.keep_alive
+            options["seed"] = self._config.seed
 
-        response = await self._request("POST", "/api/chat", operation="generate", json=payload)
+        raw = await self._chat_client.chat(
+            model=self._config.model,
+            messages=[{"role": "user", "content": request.prompt}],
+            stream=False,
+            options=options,
+            keep_alive=self._config.keep_alive,
+        )
 
         try:
-            parsed = OllamaChatResponse.model_validate(response.json())
+            parsed = OllamaChatResponse.model_validate(raw)
         except ValueError as exc:
             raise ProviderContractError(self.provider_id, "malformed chat response") from exc
 
