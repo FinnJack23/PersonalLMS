@@ -48,6 +48,19 @@ from personal_lms.domain.reconstruction import (
 )
 from personal_lms.domain.routing import RoutingDecision
 from personal_lms.domain.runs import RunState
+from personal_lms.domain.source_inventory import (
+    SourceApprovalStatus,
+    SourceAuthorityLevel,
+    SourceInventoryProcessingStatus,
+    SourceInventoryRecord,
+    SourceLocation,
+    SourceLocatorKind,
+    SourceMediaType,
+    SourceRightsStatus,
+    SourceVersion,
+    derive_source_id,
+    normalize_locator,
+)
 from personal_lms.domain.source_verification import (
     ClaimSupportStatus,
     ClaimVerification,
@@ -110,16 +123,27 @@ __all__ = [
     "RunState",
     "RunStatus",
     "SearchableTextStatus",
+    "SourceApprovalStatus",
     "SourceAssetRelationship",
+    "SourceAuthorityLevel",
     "SourceCitation",
+    "SourceInventoryProcessingStatus",
+    "SourceInventoryRecord",
+    "SourceLocation",
+    "SourceLocatorKind",
+    "SourceMediaType",
     "SourceProcessingStatus",
     "SourceRecord",
     "SourceRelationshipType",
+    "SourceRightsStatus",
     "SourceType",
     "SourceVerificationRequest",
     "SourceVerificationResult",
     "SourceVerificationStatus",
+    "SourceVersion",
     "TeachingResponse",
     "TutorTeachingRequest",
     "VaultNoteDraft",
+    "derive_source_id",
+    "normalize_locator",
 ]
