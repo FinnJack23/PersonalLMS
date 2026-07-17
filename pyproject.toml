@@ -5,8 +5,12 @@ description = "Local-first, provider-portable multi-agent learning system center
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "crewai>=1.15.2,<1.16",
     "pydantic>=2,<3",
+]
+
+[project.optional-dependencies]
+crewai = [
+    "crewai>=1.15.2,<1.16",
 ]
 
 [project.scripts]
@@ -39,6 +43,24 @@ python_version = "3.12"
 strict = true
 warn_unused_configs = true
 
+[[tool.mypy.overrides]]
+module = "crewai.*"
+ignore_missing_imports = true
+
+# In core-only mode (crewai extra not installed) crewai.* resolves to Any,
+# which trips strict mode's disallow_subclassing_any/disallow_untyped_decorators
+# for this one module. Relaxing just those two rules here (rather than inline
+# `# type: ignore` comments) keeps this file clean in both modes: a hardcoded
+# ignore would become an unused-ignore error in CrewAI-enabled mode, where
+# crewai ships real types and these rules have nothing to flag anyway.
+[[tool.mypy.overrides]]
+module = "personal_lms.adapters.crewai.*"
+disallow_subclassing_any = false
+disallow_untyped_decorators = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = [
+    "requires_crewai: test requires the optional 'crewai' extra to be installed",
+]

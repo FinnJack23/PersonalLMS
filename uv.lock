@@ -2176,8 +2176,12 @@ name = "personal-lms"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "crewai" },
     { name = "pydantic" },
+]
+
+[package.optional-dependencies]
+crewai = [
+    { name = "crewai" },
 ]
 
 [package.dev-dependencies]
@@ -2189,9 +2193,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "crewai", specifier = ">=1.15.2,<1.16" },
+    { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15.2,<1.16" },
     { name = "pydantic", specifier = ">=2,<3" },
 ]
+provides-extras = ["crewai"]
 
 [package.metadata.requires-dev]
 dev = [

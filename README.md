@@ -35,6 +35,7 @@ Open this same root folder in Claude Code and Codex for shared visibility. Do no
 - CrewAI open-source framework is the initial orchestration foundation.
 - CrewAI Flows control deterministic routing, permissions, state, approvals, and writes.
 - Crews provide bounded specialist collaboration only where it adds value.
+- CrewAI is an optional orchestration adapter, not a core dependency: `uv sync` installs a lightweight core (domain schemas, providers, routing policy, and the framework-neutral `PersonalAssistantFlow`); `uv sync --extra crewai` additionally installs CrewAI for the orchestration adapter. See ADR-0001.
 - Qwen through Ollama is the default model tier for routine work.
 - Hosted APIs are escalation resources, not the default.
 - Python services handle deterministic work without an LLM.

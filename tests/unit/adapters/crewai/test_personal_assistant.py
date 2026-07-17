@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import importlib.util
 import socket
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from crewai.flow.flow import Flow
+
+if importlib.util.find_spec("crewai") is None:
+    pytest.skip("crewai extra not installed (uv sync --extra crewai)", allow_module_level=True)
 
 from personal_lms.adapters.crewai import CrewAIPersonalAssistantFlow
 from personal_lms.domain.enums import CostClass, RoutingOutcome, RunStatus
@@ -23,10 +26,14 @@ from ._helpers import (
     make_request,
 )
 
+pytestmark = pytest.mark.requires_crewai
+
 # --- Framework boundary -----------------------------------------------------
 
 
 def test_flow_is_backed_by_crewai_flow_abstraction() -> None:
+    from crewai.flow.flow import Flow
+
     registry = ProviderRegistry()
     registry.register(
         FakeLocalProvider("solo", capability_profiles=(make_profile(profile_id="p"),))

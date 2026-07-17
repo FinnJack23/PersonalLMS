@@ -1,39 +1,37 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
-from crewai.flow.flow import Flow, FlowState, start
+from personal_lms.adapters.crewai.runtime import (
+    CrewAIExtraNotInstalledError,
+    apply_offline_defaults,
+)
 
-from personal_lms.domain.budgets import BudgetPolicy
-from personal_lms.domain.enums import CostClass, LatencyClass
-from personal_lms.domain.models import ModelRequest
-from personal_lms.flows.personal_assistant import PersonalAssistantFlow
-from personal_lms.policies.errors import RoutingError
-from personal_lms.policies.router import DeterministicRouter
-from personal_lms.providers.errors import (
+# Must run before the external `crewai` import below — this is the one
+# call site in this codebase where that import happens, so this is the one
+# place the ordering has to be enforced. See runtime.py.
+apply_offline_defaults()
+
+try:
+    from crewai.flow.flow import Flow, FlowState, start
+except ModuleNotFoundError as exc:
+    if exc.name is not None and (exc.name == "crewai" or exc.name.startswith("crewai.")):
+        raise CrewAIExtraNotInstalledError() from exc
+    raise
+
+from personal_lms.domain.budgets import BudgetPolicy  # noqa: E402
+from personal_lms.domain.enums import CostClass, LatencyClass  # noqa: E402
+from personal_lms.domain.models import ModelRequest  # noqa: E402
+from personal_lms.flows.personal_assistant import PersonalAssistantFlow  # noqa: E402
+from personal_lms.policies.errors import RoutingError  # noqa: E402
+from personal_lms.policies.router import DeterministicRouter  # noqa: E402
+from personal_lms.providers.errors import (  # noqa: E402
     ProviderContractError,
     ProviderError,
     ProviderExecutionError,
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-
-
-def _apply_offline_defaults() -> None:
-    """Keep CrewAI's own network/telemetry behavior off by default.
-
-    ``OTEL_SDK_DISABLED`` alone does not cover everything: CrewAI also
-    performs a PyPI network call to check for a newer version and persists
-    a tracing-consent preference, independently of the OTel setting. These
-    are ``setdefault`` calls, not overrides — an operator who has
-    deliberately opted into tracing or version checks via their real
-    environment is respected.
-    """
-    os.environ.setdefault("OTEL_SDK_DISABLED", "true")
-    os.environ.setdefault("CREWAI_DISABLE_VERSION_CHECK", "true")
-    os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
-    os.environ.setdefault("CREWAI_DISABLE_TRACKING", "true")
 
 
 class PersonalAssistantFlowState(FlowState):
@@ -79,7 +77,7 @@ class CrewAIPersonalAssistantFlow(Flow[PersonalAssistantFlowState]):
         max_latency_class: LatencyClass = LatencyClass.BATCH,
         **kwargs: Any,
     ) -> None:
-        _apply_offline_defaults()
+        apply_offline_defaults()
         kwargs.setdefault("tracing", False)
         kwargs.setdefault("suppress_flow_events", True)
         super().__init__(**kwargs)
