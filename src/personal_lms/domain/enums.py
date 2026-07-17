@@ -56,3 +56,54 @@ class ApprovalActionType(StrEnum):
     LARGE_BATCH_CALL = "large_batch_call"
     PUBLICATION = "publication"
     OTHER = "other"
+
+
+class SourceType(StrEnum):
+    """The physical/media type of a cataloged source.
+
+    Domain-neutral: no certification- or course-specific value. Domain
+    scope is always optional metadata via ``KnowledgeScope``, never a
+    ``SourceType`` value.
+    """
+
+    PDF = "pdf"
+    IMAGE = "image"
+    EBOOK = "ebook"
+    VIDEO = "video"
+    AUDIO = "audio"
+    DOCUMENT = "document"
+    URL = "url"
+    ARCHIVE = "archive"
+    OTHER = "other"
+
+
+class SourceProcessingStatus(StrEnum):
+    """Lifecycle status of a cataloged source, from raw archive entry
+    through trusted-RAG eligibility."""
+
+    RAW = "raw"
+    CATALOGED = "cataloged"
+    CANDIDATE = "candidate"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    RECONSTRUCTED = "reconstructed"
+    REVIEWED = "reviewed"
+    TRUSTED_FOR_RAG = "trusted_for_rag"
+
+
+class SourceRelationshipType(StrEnum):
+    """How two cataloged sources relate to one another."""
+
+    DERIVED_FROM = "derived_from"
+    SUPERSEDES = "supersedes"
+    DUPLICATE_OF = "duplicate_of"
+    ATTACHMENT_OF = "attachment_of"
+    RECONSTRUCTED_FROM = "reconstructed_from"
+
+
+class SearchableTextStatus(StrEnum):
+    """Whether a reconstructed document carries OCR/searchable text."""
+
+    NONE = "none"
+    PARTIAL = "partial"
+    COMPLETE = "complete"
