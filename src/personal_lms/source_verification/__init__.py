@@ -19,6 +19,10 @@ from personal_lms.source_verification.errors import (
     SourceVerificationUnavailableError,
 )
 from personal_lms.source_verification.fake import FakeSourceVerifier
+from personal_lms.source_verification.model_backed import (
+    ModelBackedSourceVerifier,
+    SourceVerificationRoutingPolicy,
+)
 from personal_lms.source_verification.protocol import (
     SourceVerifier,
     validate_result_matches_request,
@@ -26,10 +30,12 @@ from personal_lms.source_verification.protocol import (
 
 __all__ = [
     "FakeSourceVerifier",
+    "ModelBackedSourceVerifier",
     "SourceVerificationContractError",
     "SourceVerificationError",
     "SourceVerificationExecutionError",
     "SourceVerificationPrivacyError",
+    "SourceVerificationRoutingPolicy",
     "SourceVerificationUnavailableError",
     "SourceVerifier",
     "validate_result_matches_request",
