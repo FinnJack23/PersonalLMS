@@ -60,14 +60,24 @@ class LibrarianRetrievalRequest(StrictModel):
 class RetrievedEvidence(StrictModel):
     """One piece of evidence returned by retrieval, with the Librarian's
     interpretation of its standing (duplicate, superseded) layered on top
-    of the plain citation."""
+    of the plain citation.
+
+    ``is_duplicate`` and ``is_superseded`` are three-valued
+    (``True``/``False``/``None``), not booleans defaulting to ``False``:
+    ``None`` means this specific piece of evidence's duplicate/supersession
+    status was never evaluated (e.g. a retrieval path that only searched
+    metadata and never consulted ``SourceAssetRelationship`` records) —
+    never fabricate ``False`` (a truly-checked-and-clear result) merely
+    because a check did not happen. Only a caller that has actually
+    inspected relationship data may assert ``True`` or ``False``.
+    """
 
     citation: SourceCitation
     relevance_score: float | None = Field(default=None, ge=0, le=1)
     knowledge_pack: str | None = Field(default=None, min_length=1)
     knowledge_scope: KnowledgeScope | None = None
-    is_duplicate: bool = False
-    is_superseded: bool = False
+    is_duplicate: bool | None = None
+    is_superseded: bool | None = None
     superseded_by_source_id: str | None = Field(default=None, min_length=1)
 
 

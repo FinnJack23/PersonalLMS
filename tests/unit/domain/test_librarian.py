@@ -76,9 +76,12 @@ def _citation(**overrides: object) -> SourceCitation:
 
 
 def test_retrieved_evidence_minimal_construction() -> None:
+    """Duplicate/supersession status defaults to unknown (None), not
+    False — this evidence item's relationship data was never inspected,
+    so nothing was actually checked and cleared."""
     evidence = RetrievedEvidence(citation=_citation())
-    assert evidence.is_duplicate is False
-    assert evidence.is_superseded is False
+    assert evidence.is_duplicate is None
+    assert evidence.is_superseded is None
     assert evidence.relevance_score is None
 
 
@@ -93,6 +96,14 @@ def test_retrieved_evidence_records_supersession() -> None:
     )
     assert evidence.is_superseded is True
     assert evidence.superseded_by_source_id == "src-2"
+
+
+def test_retrieved_evidence_can_explicitly_record_not_duplicate_or_superseded() -> None:
+    """False is a meaningful, distinct value from None: it asserts a check
+    actually happened and came back clear."""
+    evidence = RetrievedEvidence(citation=_citation(), is_duplicate=False, is_superseded=False)
+    assert evidence.is_duplicate is False
+    assert evidence.is_superseded is False
 
 
 # --- EvidenceConflict -----------------------------------------------------
