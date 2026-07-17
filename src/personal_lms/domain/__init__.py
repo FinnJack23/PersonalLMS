@@ -3,6 +3,7 @@ from personal_lms.domain.approvals import ApprovalRequest
 from personal_lms.domain.budgets import BudgetPolicy
 from personal_lms.domain.catalog import ProvenanceMetadata, SourceAssetRelationship, SourceRecord
 from personal_lms.domain.citations import SourceCitation
+from personal_lms.domain.content import ContentChunk, CorpusDocument
 from personal_lms.domain.enums import (
     ApprovalActionType,
     ApprovalStatus,
@@ -57,6 +58,8 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalStatus",
     "BudgetPolicy",
+    "ContentChunk",
+    "CorpusDocument",
     "CostClass",
     "DrillRecommendation",
     "EvidenceConflict",
