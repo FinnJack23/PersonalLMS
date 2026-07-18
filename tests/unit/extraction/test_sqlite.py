@@ -185,6 +185,47 @@ def test_enqueue_same_key_different_identity_raises(store: SQLiteExtractionQueue
         store.enqueue(conflicting, now=_NOW)
 
 
+def test_enqueue_converges_across_two_connections() -> None:
+    """The uniqueness race yields one job and one enqueue event to both callers."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "queue.db"
+        setup = SQLiteExtractionQueue.open(db_path)
+        setup.initialize_schema()
+        setup.close()
+        request = _request(idempotency_key="two-connection-race")
+        results: list[object] = [None, None]
+        errors: list[BaseException | None] = [None, None]
+        barrier = threading.Barrier(2)
+
+        def enqueue(index: int) -> None:
+            connection = SQLiteExtractionQueue.open(db_path)
+            try:
+                barrier.wait()
+                results[index] = connection.enqueue(request, now=_NOW)
+            except BaseException as exc:  # pragma: no cover - diagnostic capture
+                errors[index] = exc
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=enqueue, args=(index,)) for index in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert errors == [None, None]
+        assert results[0].job_id == results[1].job_id  # type: ignore[union-attr]
+        verify = SQLiteExtractionQueue.open(db_path)
+        assert len(verify.list_by_status()) == 1
+        assert (
+            verify._connection.execute(
+                "SELECT COUNT(*) FROM extraction_job_events WHERE event_type = 'enqueued'"
+            ).fetchone()[0]
+            == 1
+        )
+        verify.close()
+
+
 def test_get_unknown_job_raises(store: SQLiteExtractionQueue) -> None:
     with pytest.raises(ExtractionJobNotFoundError):
         store.get(uuid4())

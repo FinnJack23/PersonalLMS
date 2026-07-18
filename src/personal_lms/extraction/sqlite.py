@@ -251,19 +251,6 @@ class SQLiteExtractionQueue:
     # --- jobs ---------------------------------------------------------------
 
     def enqueue(self, request: ExtractionRequest, *, now: datetime) -> ExtractionJob:
-        existing_row = self._connection.execute(
-            "SELECT * FROM extraction_jobs WHERE idempotency_key = ?",
-            (request.idempotency_key,),
-        ).fetchone()
-        if existing_row is not None:
-            existing = self._row_to_job(existing_row)
-            for field_name in _IDENTITY_FIELDS:
-                if getattr(existing, field_name) != getattr(request, field_name):
-                    raise ExtractionQueueContractError(
-                        "idempotency_key_reused_with_different_request_identity"
-                    )
-            return existing
-
         job = ExtractionJob(
             inventory_source_id=request.inventory_source_id,
             source_version_id=request.source_version_id,
@@ -277,13 +264,58 @@ class SQLiteExtractionQueue:
         )
         try:
             with self._connection:
-                self._upsert_job_row(job)
-                self._insert_event(job.job_id, "enqueued", now, {})
+                # The uniqueness constraint is the synchronization primitive.
+                # A read-then-insert sequence races under two connections and
+                # can create two events or surface a raw IntegrityError.
+                inserted = self._connection.execute(
+                    """
+                    INSERT INTO extraction_jobs (
+                        job_id, inventory_source_id, source_version_id,
+                        requested_capability, media_kind, privacy_classification,
+                        status, attempt_count, priority, created_at, updated_at,
+                        idempotency_key
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(idempotency_key) DO NOTHING
+                    RETURNING *
+                    """,
+                    (
+                        str(job.job_id),
+                        str(job.inventory_source_id),
+                        str(job.source_version_id),
+                        job.requested_capability.value,
+                        job.media_kind.value,
+                        job.privacy_classification.value,
+                        job.status.value,
+                        job.attempt_count,
+                        job.priority,
+                        _dt_to_text(job.created_at),
+                        _dt_to_text(job.updated_at),
+                        job.idempotency_key,
+                    ),
+                ).fetchone()
+                if inserted is not None:
+                    self._insert_event(job.job_id, "enqueued", now, {})
+                    return job
+
+                # Another connection won the insert. Reload the committed
+                # winner inside this transaction and validate the request.
+                winner_row = self._connection.execute(
+                    "SELECT * FROM extraction_jobs WHERE idempotency_key = ?",
+                    (request.idempotency_key,),
+                ).fetchone()
+                if winner_row is None:
+                    raise ExtractionQueueStorageError("enqueue_winner_not_found")
+                winner = self._row_to_job(winner_row)
+                for field_name in _IDENTITY_FIELDS + ("privacy_classification", "priority"):
+                    if getattr(winner, field_name) != getattr(request, field_name):
+                        raise ExtractionQueueContractError(
+                            "idempotency_key_reused_with_different_request_identity"
+                        )
+                return winner
         except sqlite3.IntegrityError as exc:
-            raise ExtractionQueueContractError("idempotency_key_conflict") from exc
+            raise ExtractionQueueStorageError("enqueue_integrity_error") from exc
         except sqlite3.Error as exc:
             raise ExtractionQueueStorageError("enqueue_failed") from exc
-        return job
 
     def get(self, job_id: UUID) -> ExtractionJob:
         row = self._connection.execute(
