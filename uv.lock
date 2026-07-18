@@ -2186,6 +2186,9 @@ crewai = [
 ollama = [
     { name = "httpx" },
 ]
+openai-live = [
+    { name = "httpx" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2198,9 +2201,10 @@ dev = [
 requires-dist = [
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15.2,<1.16" },
     { name = "httpx", marker = "extra == 'ollama'", specifier = ">=0.27,<1" },
+    { name = "httpx", marker = "extra == 'openai-live'", specifier = ">=0.27,<1" },
     { name = "pydantic", specifier = ">=2,<3" },
 ]
-provides-extras = ["crewai", "ollama"]
+provides-extras = ["crewai", "ollama", "openai-live"]
 
 [package.metadata.requires-dev]
 dev = [

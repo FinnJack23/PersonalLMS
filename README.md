@@ -72,5 +72,6 @@ uv run personal-lms build-week-demo
 ```
 
 Open `http://127.0.0.1:8000`. The page is labeled offline simulated mode. For
-an approved live demo, set `OPENAI_API_KEY` and optionally
+an approved live demo, install the HTTP client extra with `uv sync --extra
+openai-live`, then set `OPENAI_API_KEY` and optionally
 `PERSONAL_LMS_BUILD_WEEK_MODEL=gpt-5.6`; tests run with `uv run pytest`.
