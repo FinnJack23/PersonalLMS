@@ -58,3 +58,12 @@ environment values, account identifiers, or private source content are stored.
 - Hosted API ledger: 2 cumulative calls; successful call used 122 input and 41 output tokens (163 total); first call usage unavailable after adapter schema rejection; estimated cost not accurately calculable for configured `gpt-5.6` but within the authorized $4.00 cap by bounded token volume; 10 call slots remain.
 - No remote is configured; no push, remote configuration, pull request, or merge was attempted.
 - Gate 3: passed. Gate 4: ready for local commit.
+
+## 2026-07-18T02:06:07Z — Phases 5–10 post-release package
+
+- Phase 5 judge experience: offline command verified with `uv sync`/`uv run personal-lms build-week-demo`; loopback HTTP 200 and Grounded Tutor, E1, retrieval-gap, and SQLite markers present. Judge guide and five-minute script added.
+- Phase 6 evaluation evidence: deterministic focused slice `34 passed` after hardening; local Ollama case attempted with `qwen3.5:9b`, `think=false`, 8192 context, and 8h keep-alive but WSL could not reach Windows localhost; no pass rate claimed.
+- Phase 7 failure matrix: created with verified, partial, and unexercised cases labeled honestly.
+- Phase 8 independent review: one high finding (direct hosted adapter lacked explicit router approval/budget boundary) corrected; medium stale-checklist issue corrected; provider now requires explicit router approval and a non-local, nonzero budget policy before hosted construction.
+- Final post-hardening validation: `uv run pytest` — `1177 passed, 3 skipped`; Ruff check passed; formatting check passed (179 files); mypy passed (91 files); diff check passed; secret scan passed.
+- No new hosted API calls were made after the 2-call Phase 2 ledger. No remote, push, PR, merge, or release publication was attempted.

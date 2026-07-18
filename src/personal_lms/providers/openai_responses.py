@@ -10,6 +10,7 @@ import os
 import time
 from typing import Any
 
+from personal_lms.domain.budgets import BudgetPolicy
 from personal_lms.domain.enums import CostClass, LatencyClass
 from personal_lms.domain.models import ModelCapabilityProfile, ModelRequest, ModelResult
 from personal_lms.domain.privacy import PrivacyClassification
@@ -31,6 +32,8 @@ class OpenAIResponsesProvider:
         *,
         store: bool = False,
         max_retries: int = 0,
+        router_approved: bool = False,
+        budget_policy: BudgetPolicy | None = None,
     ) -> None:
         model_name = model or os.getenv("PERSONAL_LMS_BUILD_WEEK_MODEL") or "gpt-5.6"
         self.model: str = model_name
@@ -39,6 +42,12 @@ class OpenAIResponsesProvider:
             raise ValueError("Grounded Tutor live validation requires store=False")
         if max_retries != 0:
             raise ValueError("Grounded Tutor live validation disables retries")
+        if not router_approved:
+            raise ValueError("hosted routing requires explicit router approval")
+        if budget_policy is None:
+            raise ValueError("hosted routing requires a budget policy")
+        if budget_policy.local_only or budget_policy.daily_limit_usd <= 0:
+            raise ValueError("budget policy blocks hosted routing")
         self.store = False
         self.max_retries = 0
         self.capability_profiles = (

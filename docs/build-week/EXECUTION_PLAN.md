@@ -4,7 +4,7 @@
 
 Complete the smallest safe live GPT-5.6 Responses validation, prove privacy
 blocking before transport, preserve sanitized evidence, run final checks, and
-publish only after all gates pass.
+prepare a local release package. Publication requires a separately configured remote.
 
 ## Phases and lanes
 
@@ -35,5 +35,5 @@ privacy proof failure, significant design defect, or unsafe publication.
 ## Expected outputs
 
 Sanitized execution state, validation log, privacy proof, live response
-metadata, final test results, reviewed documentation, commit(s), and—only if
-the repository has a safe remote and all gates pass—a pull request.
+metadata, final test results, reviewed documentation, and local release commit(s).
+No pull request is created while the repository has no configured remote.
