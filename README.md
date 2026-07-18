@@ -57,3 +57,20 @@ The first production milestone is a usable vertical slice, not the complete proc
 - a source catalog for files, videos, and URLs;
 - one complete study-session workflow;
 - audit logs, tests, backups, and recovery instructions.
+
+## OpenAI Build Week: Grounded Tutor
+
+Grounded Tutor is a runnable Education-track vertical slice: a redacted
+Source Readiness manifest is imported, approved evidence is retrieved, a cited
+micro-lesson and exactly three evidence-backed questions are produced, and
+review results are stored in local SQLite. The fixture is synthetic and never
+reads Alan's archive or Obsidian vault.
+
+```bash
+uv sync
+uv run personal-lms build-week-demo
+```
+
+Open `http://127.0.0.1:8000`. The page is labeled offline simulated mode. For
+an approved live demo, set `OPENAI_API_KEY` and optionally
+`PERSONAL_LMS_BUILD_WEEK_MODEL=gpt-5.6`; tests run with `uv run pytest`.

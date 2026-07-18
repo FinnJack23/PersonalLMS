@@ -41,6 +41,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Prompt text to send. Always routed to a local provider only.",
     )
 
+    demo_parser = subparsers.add_parser(
+        "build-week-demo", help="Run the loopback-only Grounded Tutor demo."
+    )
+    demo_parser.add_argument("--host", default="127.0.0.1")
+    demo_parser.add_argument("--port", type=int, default=8000)
+
     return parser
 
 
@@ -105,6 +111,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "ask":
         return _ask_command(args.prompt)
+    if args.command == "build-week-demo":
+        from personal_lms.build_week_demo import serve
+
+        serve(args.host, args.port)
 
     return 0
 
