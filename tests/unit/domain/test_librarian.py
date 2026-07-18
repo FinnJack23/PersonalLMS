@@ -1,0 +1,272 @@
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+from pydantic import ValidationError
+
+from personal_lms.domain import (
+    EvidenceConflict,
+    GroundingBundle,
+    KnowledgeScope,
+    LibrarianRetrievalRequest,
+    RetrievedEvidence,
+    SourceCitation,
+)
+
+# --- LibrarianRetrievalRequest -----------------------------------------------
+
+
+def test_retrieval_request_domain_neutral_minimal_construction() -> None:
+    """No knowledge-pack or scope field is required — the request is valid
+    with none of them set."""
+    request = LibrarianRetrievalRequest(interpreted_query="OSPF DR election")
+    assert request.knowledge_scope is None
+    assert request.knowledge_packs == []
+    assert request.raw_query is None
+    assert request.max_results is None
+
+
+def test_retrieval_request_accepts_multiple_knowledge_packs() -> None:
+    request = LibrarianRetrievalRequest(
+        interpreted_query="subnetting basics",
+        knowledge_packs=["ccna", "network-plus"],
+    )
+    assert request.knowledge_packs == ["ccna", "network-plus"]
+
+
+def test_retrieval_request_rejects_empty_query() -> None:
+    with pytest.raises(ValidationError):
+        LibrarianRetrievalRequest(interpreted_query="")
+
+
+def test_retrieval_request_rejects_non_positive_max_results() -> None:
+    with pytest.raises(ValidationError):
+        LibrarianRetrievalRequest(interpreted_query="q", max_results=0)
+
+
+def test_retrieval_request_rejects_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        LibrarianRetrievalRequest(interpreted_query="q", vector_collection="ccna")  # type: ignore[call-arg]
+
+
+def test_retrieval_request_knowledge_packs_default_is_isolated_between_instances() -> None:
+    first = LibrarianRetrievalRequest(interpreted_query="a")
+    second = LibrarianRetrievalRequest(interpreted_query="b")
+    first.knowledge_packs.append("ccna")
+    assert second.knowledge_packs == []
+
+
+def test_retrieval_request_json_round_trip() -> None:
+    request = LibrarianRetrievalRequest(
+        interpreted_query="OSPF DR election",
+        knowledge_scope=KnowledgeScope(certification="CCNA"),
+    )
+    restored = LibrarianRetrievalRequest.model_validate_json(request.model_dump_json())
+    assert restored == request
+
+
+# --- RetrievedEvidence --------------------------------------------------
+
+
+def _citation(**overrides: object) -> SourceCitation:
+    defaults: dict[str, object] = {"source_id": "src-1", "title": "Routing Concepts"}
+    defaults.update(overrides)
+    return SourceCitation.model_validate(defaults)
+
+
+def test_retrieved_evidence_minimal_construction() -> None:
+    """Duplicate/supersession status defaults to unknown (None), not
+    False — this evidence item's relationship data was never inspected,
+    so nothing was actually checked and cleared."""
+    evidence = RetrievedEvidence(citation=_citation())
+    assert evidence.is_duplicate is None
+    assert evidence.is_superseded is None
+    assert evidence.relevance_score is None
+
+
+def test_retrieved_evidence_rejects_relevance_score_out_of_range() -> None:
+    with pytest.raises(ValidationError):
+        RetrievedEvidence(citation=_citation(), relevance_score=1.5)
+
+
+def test_retrieved_evidence_records_supersession() -> None:
+    evidence = RetrievedEvidence(
+        citation=_citation(), is_superseded=True, superseded_by_source_id="src-2"
+    )
+    assert evidence.is_superseded is True
+    assert evidence.superseded_by_source_id == "src-2"
+
+
+def test_retrieved_evidence_can_explicitly_record_not_duplicate_or_superseded() -> None:
+    """False is a meaningful, distinct value from None: it asserts a check
+    actually happened and came back clear."""
+    evidence = RetrievedEvidence(citation=_citation(), is_duplicate=False, is_superseded=False)
+    assert evidence.is_duplicate is False
+    assert evidence.is_superseded is False
+
+
+# --- text / document_id / chunk_id: optional, backward-compatible ----------
+
+
+def test_retrieved_evidence_text_document_and_chunk_default_to_none() -> None:
+    """Source-metadata-only retrieval (no actual chunk content) never sets
+    these — they must default to None, not be required."""
+    evidence = RetrievedEvidence(citation=_citation())
+    assert evidence.text is None
+    assert evidence.document_id is None
+    assert evidence.chunk_id is None
+
+
+def test_retrieved_evidence_accepts_text_document_and_chunk_ids() -> None:
+    evidence = RetrievedEvidence(
+        citation=_citation(),
+        text="The DR is elected by priority, then router ID.",
+        document_id="doc-1",
+        chunk_id="chunk-1",
+    )
+    assert evidence.text == "The DR is elected by priority, then router ID."
+    assert evidence.document_id == "doc-1"
+    assert evidence.chunk_id == "chunk-1"
+
+
+def test_retrieved_evidence_rejects_empty_text() -> None:
+    with pytest.raises(ValidationError):
+        RetrievedEvidence(citation=_citation(), text="")
+
+
+def test_retrieved_evidence_old_shaped_payload_without_new_fields_still_validates() -> None:
+    """A JSON payload shaped like it predates this milestone (no text/
+    document_id/chunk_id keys at all) must still validate — existing
+    callers and stored payloads remain compatible."""
+    old_shaped_json = (
+        '{"citation": {"source_id": "src-1", "title": "Routing Concepts", '
+        '"location": null, "approved": false}, "relevance_score": 0.5, '
+        '"knowledge_pack": null, "knowledge_scope": null, "is_duplicate": null, '
+        '"is_superseded": null, "superseded_by_source_id": null}'
+    )
+    evidence = RetrievedEvidence.model_validate_json(old_shaped_json)
+    assert evidence.text is None
+    assert evidence.document_id is None
+    assert evidence.chunk_id is None
+    assert evidence.trusted_for_rag is None
+    assert evidence.relevance_score == 0.5
+
+
+def test_retrieved_evidence_json_round_trip_with_new_fields() -> None:
+    evidence = RetrievedEvidence(
+        citation=_citation(),
+        text="The DR is elected by priority, then router ID.",
+        document_id="doc-1",
+        chunk_id="chunk-1",
+        trusted_for_rag=True,
+    )
+    restored = RetrievedEvidence.model_validate_json(evidence.model_dump_json())
+    assert restored == evidence
+
+
+# --- trusted_for_rag: optional, distinct from citation.approved -------------
+
+
+def test_retrieved_evidence_trusted_for_rag_defaults_to_none() -> None:
+    """Source-metadata-only retrieval has no ContentChunk.trusted_for_rag
+    concept at all and must leave this unset, not default to False."""
+    evidence = RetrievedEvidence(citation=_citation())
+    assert evidence.trusted_for_rag is None
+
+
+def test_retrieved_evidence_exposes_trusted_for_rag_true() -> None:
+    evidence = RetrievedEvidence(citation=_citation(), trusted_for_rag=True)
+    assert evidence.trusted_for_rag is True
+
+
+def test_retrieved_evidence_exposes_trusted_for_rag_false() -> None:
+    evidence = RetrievedEvidence(citation=_citation(), trusted_for_rag=False)
+    assert evidence.trusted_for_rag is False
+
+
+def test_retrieved_evidence_approved_and_trusted_for_rag_are_independent() -> None:
+    """A citation can be approved while the evidence itself is not
+    trusted_for_rag — these are two distinct signals, never conflated."""
+    evidence = RetrievedEvidence(citation=_citation(approved=True), trusted_for_rag=False)
+    assert evidence.citation.approved is True
+    assert evidence.trusted_for_rag is False
+
+
+# --- EvidenceConflict -----------------------------------------------------
+
+
+def test_evidence_conflict_requires_at_least_two_sources() -> None:
+    with pytest.raises(ValidationError):
+        EvidenceConflict(description="disagreement", conflicting_source_ids=["src-1"])
+
+
+def test_evidence_conflict_valid_construction() -> None:
+    conflict = EvidenceConflict(
+        description="src-1 and src-2 disagree on default OSPF hello timer",
+        conflicting_source_ids=["src-1", "src-2"],
+    )
+    assert conflict.conflicting_source_ids == ["src-1", "src-2"]
+
+
+# --- GroundingBundle -----------------------------------------------------
+
+
+def test_grounding_bundle_empty_evidence_is_valid_and_explicit() -> None:
+    bundle = GroundingBundle(request_id=uuid4(), is_sufficient=False, gaps=["no CCNA source"])
+    assert bundle.evidence == []
+    assert bundle.is_sufficient is False
+
+
+def test_grounding_bundle_sufficiency_is_not_inferred_from_evidence_count() -> None:
+    """is_sufficient is an explicit Librarian judgment, not derived — a
+    bundle with evidence can still be marked insufficient."""
+    bundle = GroundingBundle(
+        request_id=uuid4(),
+        evidence=[RetrievedEvidence(citation=_citation())],
+        is_sufficient=False,
+        gaps=["evidence found but does not cover the full objective"],
+    )
+    assert len(bundle.evidence) == 1
+    assert bundle.is_sufficient is False
+
+
+def test_grounding_bundle_requires_is_sufficient() -> None:
+    with pytest.raises(ValidationError):
+        GroundingBundle.model_validate({"request_id": str(uuid4())})
+
+
+def test_grounding_bundle_records_conflicts() -> None:
+    bundle = GroundingBundle(
+        request_id=uuid4(),
+        evidence=[
+            RetrievedEvidence(citation=_citation(source_id="src-1")),
+            RetrievedEvidence(citation=_citation(source_id="src-2")),
+        ],
+        is_sufficient=True,
+        conflicts=[
+            EvidenceConflict(
+                description="conflicting hello timer defaults",
+                conflicting_source_ids=["src-1", "src-2"],
+            )
+        ],
+    )
+    assert len(bundle.conflicts) == 1
+
+
+def test_grounding_bundle_gaps_default_is_isolated_between_instances() -> None:
+    first = GroundingBundle(request_id=uuid4(), is_sufficient=False)
+    second = GroundingBundle(request_id=uuid4(), is_sufficient=False)
+    first.gaps.append("missing source")
+    assert second.gaps == []
+
+
+def test_grounding_bundle_json_round_trip() -> None:
+    bundle = GroundingBundle(
+        request_id=uuid4(),
+        evidence=[RetrievedEvidence(citation=_citation())],
+        is_sufficient=True,
+        knowledge_scope=KnowledgeScope(certification="CCNA"),
+    )
+    restored = GroundingBundle.model_validate_json(bundle.model_dump_json())
+    assert restored == bundle

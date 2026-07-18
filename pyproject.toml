@@ -1,0 +1,78 @@
+[project]
+name = "personal-lms"
+version = "0.1.0"
+description = "Local-first, provider-portable multi-agent learning system centered on Obsidian."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2,<3",
+]
+
+[project.optional-dependencies]
+crewai = [
+    "crewai>=1.15.2,<1.16",
+]
+ollama = [
+    "httpx>=0.27,<1",
+]
+openai-live = [
+    "httpx>=0.27,<1",
+]
+
+[project.scripts]
+personal-lms = "personal_lms.cli:main"
+personal-lms-ollama-smoke-test = "personal_lms.providers.ollama.smoke_test:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/personal_lms"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.11",
+    "pytest>=8.3",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "crewai.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "httpx.*"
+ignore_missing_imports = true
+
+# In core-only mode (crewai extra not installed) crewai.* resolves to Any,
+# which trips strict mode's disallow_subclassing_any/disallow_untyped_decorators
+# for this one module. Relaxing just those two rules here (rather than inline
+# `# type: ignore` comments) keeps this file clean in both modes: a hardcoded
+# ignore would become an unused-ignore error in CrewAI-enabled mode, where
+# crewai ships real types and these rules have nothing to flag anyway.
+[[tool.mypy.overrides]]
+module = "personal_lms.adapters.crewai.*"
+disallow_subclassing_any = false
+disallow_untyped_decorators = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "requires_crewai: test requires the optional 'crewai' extra to be installed",
+    "requires_ollama: test requires the optional 'ollama' extra to be installed",
+]
