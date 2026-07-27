@@ -34,5 +34,11 @@ dist/
 .local/
 tmp/
 
+# Observed gate output. Reviewed expectations live under tests/ and are
+# committed; everything a gate run *observes* is runtime output and is
+# never committed, so an observed report can never be mistaken for an
+# approved golden artifact.
+var/
+
 # Claude Code local permissions
 .claude/settings.local.json

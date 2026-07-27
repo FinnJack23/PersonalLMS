@@ -35,20 +35,34 @@ source-level descriptive fields.
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 from types import TracebackType
 from typing import Self
 
 from personal_lms.content.errors import (
+    ChunkNotFoundError,
     ParentDocumentNotApprovedError,
     ParentDocumentNotFoundError,
     ParentSourceMismatchError,
 )
-from personal_lms.content.protocol import ChunkSearchFilters, ChunkSearchHit, SourceSearchMode
+from personal_lms.content.governed import GovernedChunkEligibility
+from personal_lms.content.protocol import (
+    ChunkEligibilityFilter,
+    ChunkSearchFilters,
+    ChunkSearchHit,
+    SourceSearchMode,
+)
 from personal_lms.domain.citations import SourceCitation
 from personal_lms.domain.content import ContentChunk, CorpusDocument
 from personal_lms.domain.enums import SourceProcessingStatus
+from personal_lms.domain.objective_packs import (
+    PermittedUse,
+    QuarantineStatus,
+    TrustStatus,
+)
+from personal_lms.domain.source_inventory import SourceRightsStatus
 
 _SCHEMA_STATEMENTS = (
     """
@@ -114,6 +128,37 @@ _SCHEMA_STATEMENTS = (
         tokenize = "unicode61 remove_diacritics 0 tokenchars '.:/-'"
     )
     """,
+    # Governance state lives in its own table rather than as new columns
+    # on content_chunks: this module creates its schema with CREATE TABLE
+    # IF NOT EXISTS and tracks no version, so adding a column would not
+    # reach an existing database and would fail at query time. A new
+    # table is safe on old and new stores alike.
+    """
+    CREATE TABLE IF NOT EXISTS content_chunk_eligibility (
+        chunk_id TEXT PRIMARY KEY,
+        rights_status TEXT NOT NULL,
+        permitted_uses_csv TEXT NOT NULL,
+        trust_status TEXT NOT NULL,
+        quarantine_status TEXT NOT NULL,
+        -- Binding columns. These are join keys, not metadata: a governed
+        -- query matches only when the chunk's current text hash, its
+        -- document's current content hash, and its source's current
+        -- identity and bytes all still equal these values. Governance
+        -- therefore cannot outlive the content it governs.
+        chunk_text_hash TEXT NOT NULL,
+        document_content_hash TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        source_sha256 TEXT NOT NULL,
+        review_decision_id TEXT NOT NULL,
+        eligibility_policy_version TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_chunk_eligibility_trust "
+    "ON content_chunk_eligibility(trust_status)",
+    "CREATE INDEX IF NOT EXISTS idx_chunk_eligibility_quarantine "
+    "ON content_chunk_eligibility(quarantine_status)",
+    "CREATE INDEX IF NOT EXISTS idx_chunk_eligibility_binding "
+    "ON content_chunk_eligibility(chunk_text_hash, document_content_hash)",
 )
 
 _KNOWLEDGE_SCOPE_FILTER_COLUMNS = (
@@ -135,6 +180,17 @@ _APPROVED_STATUSES = frozenset(
         SourceProcessingStatus.TRUSTED_FOR_RAG,
     }
 )
+
+
+def _sha256_text(value: str | None) -> str | None:
+    """SHA-256 of ``value`` as lowercase hex, for use inside SQL.
+
+    ``None`` propagates as ``None`` so a missing field never matches a
+    real digest.
+    """
+    if value is None:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _escape_fts_phrase(query: str) -> str:
@@ -213,9 +269,174 @@ def _filter_clause(
         )
         params.extend(scope_params)
 
+    if filters.eligibility is not None:
+        eligibility_clause, eligibility_params = _eligibility_clause(
+            filters.eligibility, table_alias=table_alias
+        )
+        if eligibility_clause:
+            clauses.append(eligibility_clause)
+            params.extend(eligibility_params)
+
     if not clauses:
         return "", []
     return " AND " + " AND ".join(clauses), params
+
+
+def _permitted_uses_csv(permitted_uses: frozenset[PermittedUse]) -> str:
+    """Sorted, comma-delimited uses with leading and trailing commas.
+
+    The surrounding commas are what let a containment test be exact: a
+    ``LIKE '%,local_teach,%'`` match cannot be satisfied by a longer use
+    name that merely ends in ``local_teach``. Values are sorted so the
+    stored text is deterministic for a given set.
+    """
+    if not permitted_uses:
+        return ","
+    return "," + ",".join(sorted(use.value for use in permitted_uses)) + ","
+
+
+def _parse_permitted_uses(csv_text: str) -> frozenset[PermittedUse]:
+    return frozenset(PermittedUse(value) for value in csv_text.strip(",").split(",") if value)
+
+
+def _eligibility_clause(
+    eligibility: ChunkEligibilityFilter, *, table_alias: str
+) -> tuple[str, list[object]]:
+    """An ``EXISTS`` fragment constraining governance state, plus its parameters.
+
+    Structured as ``EXISTS (SELECT 1 FROM content_chunk_eligibility ...)``
+    so a chunk with *no* governance row fails every active constraint
+    automatically — the fail-closed default the protocol documents. It
+    lives in the WHERE clause, so SQLite applies it while selecting
+    candidates, before ``ORDER BY`` and ``LIMIT`` reduce them.
+    """
+    conditions: list[str] = []
+    params: list[object] = []
+
+    if eligibility.exclude_quarantined:
+        conditions.append("ce.quarantine_status = ?")
+        params.append(QuarantineStatus.CLEAR.value)
+
+    if eligibility.allowed_rights_statuses is not None:
+        allowed = eligibility.allowed_rights_statuses
+        if not allowed:
+            conditions.append("1 = 0")
+        else:
+            placeholders = ", ".join("?" for _ in allowed)
+            conditions.append(f"ce.rights_status IN ({placeholders})")
+            params.extend(sorted(status.value for status in allowed))
+
+    if eligibility.required_permitted_use is not None:
+        conditions.append("ce.permitted_uses_csv LIKE ?")
+        params.append(f"%,{eligibility.required_permitted_use.value},%")
+
+    if eligibility.allowed_trust_statuses is not None:
+        allowed_trust = eligibility.allowed_trust_statuses
+        if not allowed_trust:
+            conditions.append("1 = 0")
+        else:
+            placeholders = ", ".join("?" for _ in allowed_trust)
+            conditions.append(f"ce.trust_status IN ({placeholders})")
+            params.extend(sorted(status.value for status in allowed_trust))
+
+    if eligibility.allowed_review_states is not None and not eligibility.allowed_review_states:
+        # An empty allowed-set permits nothing. A non-empty one is
+        # satisfied structurally: a governance row exists only because a
+        # persisted review decision authorized it, so review state is
+        # carried by review_decision_id rather than duplicated here.
+        conditions.append("1 = 0")
+
+    if eligibility.eligibility_policy_version is not None:
+        conditions.append("ce.eligibility_policy_version = ?")
+        params.append(eligibility.eligibility_policy_version)
+
+    if eligibility.allowed_document_privacy is not None:
+        # Governed retrieval takes the *strictest* classification across
+        # the chunk and its parent document. The base filter deliberately
+        # keeps chunk-only semantics — existing Librarian callers depend
+        # on it — but a governed read must not let a public child silently
+        # downgrade a restricted parent.
+        allowed_docs = eligibility.allowed_document_privacy
+        if not allowed_docs:
+            conditions.append("1 = 0")
+        else:
+            placeholders = ", ".join("?" for _ in allowed_docs)
+            conditions.append(
+                "NOT EXISTS (SELECT 1 FROM corpus_documents cd_priv "
+                f"WHERE cd_priv.document_id = {table_alias}.document_id "
+                f"AND cd_priv.privacy_classification NOT IN ({placeholders}))"
+            )
+            params.extend(sorted(classification.value for classification in allowed_docs))
+
+    if eligibility.known_review_decision_ids is not None:
+        # A governance row must name a decision the review store actually
+        # holds. A non-empty string proves nothing; an empty allowed set
+        # correctly authorizes nothing.
+        allowed_decisions = eligibility.known_review_decision_ids
+        if not allowed_decisions:
+            conditions.append("1 = 0")
+        else:
+            placeholders = ", ".join("?" for _ in allowed_decisions)
+            conditions.append(f"ce.review_decision_id IN ({placeholders})")
+            params.extend(sorted(allowed_decisions))
+
+    if eligibility.current_source_sha256 is not None:
+        # The row's pinned source bytes must equal what that source
+        # currently holds. Expressed as a VALUES join so the comparison
+        # happens in SQL rather than after the fact.
+        pairs = eligibility.current_source_sha256
+        if not pairs:
+            conditions.append("1 = 0")
+        else:
+            tuples = ", ".join("(?, ?)" for _ in pairs)
+            conditions.append(f"(ce.source_id, ce.source_sha256) IN (VALUES {tuples})")
+            for source_id, sha in pairs:
+                params.extend((source_id, sha))
+
+    if eligibility.require_current_binding:
+        # The binding join. Each equality ties the governance row to the
+        # *current* state of the thing it governs, so replacing a chunk's
+        # text, revising its parent document, or superseding its source
+        # makes this row stop matching — no invalidation sweep needed.
+        # Recomputed from the chunk's actual text, not read from its
+        # stored ``text_hash`` field. ``ContentChunk.text_hash`` is a
+        # caller-supplied digest under the existing shared contract, so a
+        # rewritten chunk could keep a stale one; binding governance to
+        # the recomputed value closes that without narrowing a contract
+        # every other consumer already depends on.
+        conditions.append(
+            f"ce.chunk_text_hash = personal_lms_sha256("
+            f"json_extract({table_alias}.record_json, '$.text'))"
+        )
+        conditions.append(f"ce.source_id = {table_alias}.source_id")
+
+        # The chunk's own current state, not the state it had when the
+        # governance row was written. Withdrawing trusted_for_rag or
+        # downgrading status must revoke access immediately.
+        status_placeholders = ", ".join("?" for _ in _APPROVED_STATUSES)
+        conditions.append(f"{table_alias}.status IN ({status_placeholders})")
+        params.extend(sorted(status.value for status in _APPROVED_STATUSES))
+        conditions.append(f"json_extract({table_alias}.record_json, '$.trusted_for_rag') = 1")
+
+        # The parent document's current hash *and* current status.
+        conditions.append(
+            "EXISTS (SELECT 1 FROM corpus_documents cd_bind "
+            f"WHERE cd_bind.document_id = {table_alias}.document_id "
+            "AND json_extract(cd_bind.record_json, '$.content_hash') = ce.document_content_hash "
+            f"AND cd_bind.status IN ({status_placeholders}))"
+        )
+        params.extend(sorted(status.value for status in _APPROVED_STATUSES))
+        conditions.append("ce.review_decision_id <> ''")
+
+    if not conditions:
+        return "", []
+
+    where = " AND ".join(conditions)
+    clause = (
+        "EXISTS (SELECT 1 FROM content_chunk_eligibility ce "
+        f"WHERE ce.chunk_id = {table_alias}.chunk_id AND {where})"
+    )
+    return clause, params
 
 
 def _citation_location(chunk: ContentChunk) -> str | None:
@@ -262,6 +483,11 @@ class SQLiteContentRepository:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._connection = connection
         self._connection.row_factory = sqlite3.Row
+        # A deterministic SHA-256 usable inside the WHERE clause, so the
+        # governed binding can recompute a chunk's digest from its actual
+        # text *before* ORDER BY and LIMIT. Standard library only; marked
+        # deterministic so SQLite may use it in an index or partial index.
+        self._connection.create_function("personal_lms_sha256", 1, _sha256_text, deterministic=True)
 
     @classmethod
     def open(cls, database_path: str | Path) -> Self:
@@ -440,6 +666,81 @@ class SQLiteContentRepository:
         if row is None:
             return None
         return ContentChunk.model_validate_json(row["record_json"])
+
+    def upsert_eligibility(self, record: GovernedChunkEligibility) -> None:
+        """Insert or replace one chunk's governance record.
+
+        Replacement rather than accumulation is deliberate: a chunk has
+        exactly one current governance state, and the binding columns make
+        a stale row unmatched rather than merely outdated.
+        """
+        existing = self._connection.execute(
+            "SELECT 1 FROM content_chunks WHERE chunk_id = ?", (record.chunk_id,)
+        ).fetchone()
+        if existing is None:
+            raise ChunkNotFoundError(record.chunk_id)
+
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO content_chunk_eligibility
+                    (chunk_id, rights_status, permitted_uses_csv, trust_status,
+                     quarantine_status, chunk_text_hash, document_content_hash,
+                     source_id, source_sha256, review_decision_id,
+                     eligibility_policy_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(chunk_id) DO UPDATE SET
+                    rights_status = excluded.rights_status,
+                    permitted_uses_csv = excluded.permitted_uses_csv,
+                    trust_status = excluded.trust_status,
+                    quarantine_status = excluded.quarantine_status,
+                    chunk_text_hash = excluded.chunk_text_hash,
+                    document_content_hash = excluded.document_content_hash,
+                    source_id = excluded.source_id,
+                    source_sha256 = excluded.source_sha256,
+                    review_decision_id = excluded.review_decision_id,
+                    eligibility_policy_version = excluded.eligibility_policy_version
+                """,
+                (
+                    record.chunk_id,
+                    record.rights_status.value,
+                    _permitted_uses_csv(record.permitted_uses),
+                    record.trust_status.value,
+                    record.quarantine_status.value,
+                    record.chunk_text_hash,
+                    record.document_content_hash,
+                    record.source_id,
+                    record.source_sha256,
+                    record.review_decision_id,
+                    record.eligibility_policy_version,
+                ),
+            )
+
+    def get_eligibility(self, chunk_id: str) -> GovernedChunkEligibility | None:
+        row = self._connection.execute(
+            """
+            SELECT rights_status, permitted_uses_csv, trust_status, quarantine_status,
+                   chunk_text_hash, document_content_hash, source_id, source_sha256,
+                   review_decision_id, eligibility_policy_version
+            FROM content_chunk_eligibility WHERE chunk_id = ?
+            """,
+            (chunk_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return GovernedChunkEligibility(
+            chunk_id=chunk_id,
+            chunk_text_hash=row["chunk_text_hash"],
+            document_content_hash=row["document_content_hash"],
+            source_id=row["source_id"],
+            source_sha256=row["source_sha256"],
+            review_decision_id=row["review_decision_id"],
+            eligibility_policy_version=row["eligibility_policy_version"],
+            rights_status=SourceRightsStatus(row["rights_status"]),
+            permitted_uses=_parse_permitted_uses(row["permitted_uses_csv"]),
+            trust_status=TrustStatus(row["trust_status"]),
+            quarantine_status=QuarantineStatus(row["quarantine_status"]),
+        )
 
     def list_chunks(self, *, filters: ChunkSearchFilters | None = None) -> tuple[ContentChunk, ...]:
         clause, params = _filter_clause(filters, table_alias="content_chunks")

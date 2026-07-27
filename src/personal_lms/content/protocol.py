@@ -14,20 +14,106 @@ of source metadata.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import ClassVar, Protocol, runtime_checkable
 
 from personal_lms.catalog.protocol import SourceSearchMode
 from personal_lms.domain.citations import SourceCitation
 from personal_lms.domain.content import ContentChunk, CorpusDocument
 from personal_lms.domain.enums import SourceProcessingStatus
+from personal_lms.domain.objective_packs import (
+    PermittedUse,
+    ReviewState,
+    TrustStatus,
+)
 from personal_lms.domain.privacy import PrivacyClassification
+from personal_lms.domain.source_inventory import SourceRightsStatus
 
 __all__ = [
+    "ChunkEligibilityFilter",
     "ChunkSearchFilters",
     "ChunkSearchHit",
     "ContentRepository",
     "SourceSearchMode",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkEligibilityFilter:
+    """Structural governance constraints applied in SQL before ``LIMIT``.
+
+    The retrieval-side half of the policy defined once in
+    ``objective_packs.eligibility``. Applying these after ``LIMIT`` would
+    be a security hole shaped like a performance detail: ineligible rows
+    would consume the result window, and the caller would be told "no
+    results" rather than the truth.
+
+    Callers should not assemble one of these by hand — use
+    ``content.governed.build_governed_filters``, which turns on every
+    dimension at once. A hand-built partial filter is almost certainly
+    leaving one open by accident.
+
+    Objective scope is deliberately **absent** here: it belongs to the
+    existing ``KnowledgeScope.objective_framework`` relation (see
+    ``ChunkSearchFilters.objective_framework``), not to a parallel
+    governance column that could disagree with it.
+    """
+
+    #: The dimensions a governed query constrains, matching
+    #: ``content.governed.GOVERNED_DIMENSIONS``. ``ClassVar`` keeps this a
+    #: constant rather than a dataclass field — without it, ``slots=True``
+    #: would turn it into a per-instance slot descriptor and a constructor
+    #: parameter.
+    DIMENSIONS: ClassVar[tuple[str, ...]] = (
+        "quarantine",
+        "rights",
+        "permitted_use",
+        "privacy",
+        "objective_version",
+        "review_state",
+        "trust",
+        "content_binding",
+    )
+
+    exclude_quarantined: bool = False
+    allowed_rights_statuses: frozenset[SourceRightsStatus] | None = None
+    required_permitted_use: PermittedUse | None = None
+    allowed_trust_statuses: frozenset[TrustStatus] | None = None
+    allowed_review_states: frozenset[ReviewState] | None = None
+    require_current_binding: bool = False
+    eligibility_policy_version: str | None = None
+    #: Review decisions that actually exist in the review store. ``None``
+    #: leaves the dimension unconstrained (tests of other dimensions); a
+    #: set — including an empty one — constrains it. An empty set
+    #: authorizes nothing, which is the correct reading of "no decisions
+    #: are persisted".
+    #: Classifications the *parent document* may carry. Governed reads
+    #: take the strictest classification across chunk and document; the
+    #: base ``allowed_privacy_classifications`` filter keeps chunk-only
+    #: semantics for existing callers.
+    allowed_document_privacy: frozenset[PrivacyClassification] | None = None
+    known_review_decision_ids: frozenset[str] | None = None
+    #: ``(source_id, sha256)`` pairs for the bytes each source currently
+    #: holds. Sorted tuple rather than a mapping so the filter stays
+    #: hashable and comparable like every other field here.
+    current_source_sha256: tuple[tuple[str, str], ...] | None = None
+
+    @property
+    def is_active(self) -> bool:
+        """Whether this filter constrains anything at all."""
+        return any(
+            (
+                self.exclude_quarantined,
+                self.allowed_rights_statuses is not None,
+                self.required_permitted_use is not None,
+                self.allowed_trust_statuses is not None,
+                self.allowed_review_states is not None,
+                self.require_current_binding,
+                self.eligibility_policy_version is not None,
+                self.allowed_document_privacy is not None,
+                self.known_review_decision_ids is not None,
+                self.current_source_sha256 is not None,
+            )
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +147,7 @@ class ChunkSearchFilters:
     course: str | None = None
     topic: str | None = None
     objective_framework: str | None = None
+    eligibility: ChunkEligibilityFilter | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +203,23 @@ class ContentRepository(Protocol):
         ...
 
     def get_chunk(self, chunk_id: str) -> ContentChunk | None: ...
+
+    def upsert_eligibility(self, record: object) -> None:
+        """Insert, or replace, one chunk's governance record.
+
+        ``record.chunk_id`` must already have a persisted ``ContentChunk``
+        — see ``content.errors.ChunkNotFoundError``. Recording
+        eligibility for a chunk that does not exist would create a
+        governance row nothing can ever match.
+        """
+        ...
+
+    def get_eligibility(self, chunk_id: str) -> object | None:
+        """The chunk's governance record, or ``None`` if never recorded.
+
+        ``None`` means *not eligible* to every filter, never "unfiltered".
+        """
+        ...
 
     def list_chunks(
         self, *, filters: ChunkSearchFilters | None = None

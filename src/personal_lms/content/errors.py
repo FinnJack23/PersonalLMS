@@ -38,6 +38,22 @@ class ParentSourceMismatchError(ContentRepositoryError):
         self.actual_source_id = actual
 
 
+class ChunkNotFoundError(ContentRepositoryError):
+    """Raised when an eligibility record names a chunk that does not exist.
+
+    A governance row for a missing chunk could never match a search, so
+    accepting one would silently lose the caller's intent — this is
+    raised instead.
+    """
+
+    def __init__(self, chunk_id: str) -> None:
+        super().__init__(
+            f"No ContentChunk persisted with chunk_id {chunk_id!r}; "
+            "upsert_chunk() must run before upsert_eligibility() for it"
+        )
+        self.chunk_id = chunk_id
+
+
 class ParentDocumentNotApprovedError(ContentRepositoryError):
     """Raised when a ``trusted_for_rag=True`` chunk's parent document has
     not itself passed review.
