@@ -33,6 +33,15 @@ The canonical root is `/home/ajsch/projects/personal-lms`.
 
 Codex may inspect the same worktree Claude is using, but concurrent writes are prohibited. For active Codex implementation, create a separate Git worktree and branch.
 
+Before starting session work, read
+`/home/ajsch/projects/personal-lms/alan_plan/startup.md`; if it is missing or
+empty, stop and ask Alan. In the canonical checkout, use ignored `alan_plan/`
+for workflow plans, handoffs, prompts, reports, reviews, and references;
+`alan_build/` for prototypes and generated build experiments; and `alan_test/`
+for ad hoc tests, logs, evidence, and experiments. These paths must never be
+staged, committed, merged, reviewed, packaged, or removed as repository
+cleanup.
+
 Example:
 
 ```bash

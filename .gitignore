@@ -36,3 +36,7 @@ tmp/
 
 # Claude Code local permissions
 .claude/settings.local.json
+# Alan private workflow folders: never stage, commit, review, package, or clean.
+/alan_plan/
+/alan_build/
+/alan_test/

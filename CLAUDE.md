@@ -33,7 +33,17 @@ Do not implement the whole product in one session. Follow the active handoff exa
 
 The canonical worktree is `/home/ajsch/projects/personal-lms`.
 
-Do not edit files that another coding agent is editing. Qwen and Codex implementation work must occur in separate Git worktrees. Documentation-only suggestions can be deposited into `docs/inbox/` for later review.
+Do not edit files that another coding agent is editing. Qwen and Codex
+implementation work must occur in separate Git worktrees.
+
+Before starting session work, read
+`/home/ajsch/projects/personal-lms/alan_plan/startup.md`; if it is missing or
+empty, stop and ask Alan. In the canonical checkout, use ignored `alan_plan/`
+for workflow plans, handoffs, prompts, reports, reviews, and references;
+`alan_build/` for prototypes and generated build experiments; and `alan_test/`
+for ad hoc tests, logs, evidence, and experiments. These paths must never be
+staged, committed, merged, reviewed, packaged, or removed as repository
+cleanup.
 
 ## Security
 
