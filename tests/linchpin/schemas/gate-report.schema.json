@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://personal-lms.local/schemas/gate-report-v1.0.json",
+  "title": "CCNA Mastery Micro-Lab Gate Report",
+  "description": "v2 candidate, pending technical review. Derived from LINCHPIN_TRACEABILITY.md GLOBAL-06 and micro/11-48-HOUR-LINCHPIN-GATES.md. Validated as a Draft 2020-12 schema with a format checker and 4 positive + 12 negative example instances (results recorded in the v2 report). started_at/finished_at additionally carry a structural RFC3339 pattern so date-time is enforced even without the optional jsonschema format package.",
+  "type": "object",
+  "unevaluatedProperties": false,
+  "required": [
+    "schema_version",
+    "gate_id",
+    "status",
+    "fixture_manifest_sha256",
+    "code_revision",
+    "started_at",
+    "finished_at",
+    "elapsed_seconds",
+    "checks"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "gate_id": {"type": "string", "enum": ["gate-1", "gate-2", "gate-3"]},
+    "status": {"type": "string", "enum": ["pass", "fail", "deferred"]},
+    "fixture_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "code_revision": {"type": "string", "minLength": 7},
+    "started_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"},
+    "finished_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"},
+    "elapsed_seconds": {"type": "integer", "minimum": 0},
+    "subgates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_isolation", "factory_scalability"],
+      "properties": {
+        "route_isolation": {"type": "string", "enum": ["pass", "fail", "deferred"]},
+        "factory_scalability": {"type": "string", "enum": ["pass", "fail", "deferred"]}
+      }
+    },
+    "deferred_checks": {
+      "type": "array",
+      "items": {"type": "string", "enum": ["G3-RI-QWEN-01", "week-scale-retest-bank-comparison"]}
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/check"}
+    },
+    "negative_cases": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"gate_id": {"const": "gate-3"}}, "required": ["gate_id"]},
+      "then": {"required": ["subgates"]}
+    },
+    {
+      "if": {"properties": {"gate_id": {"enum": ["gate-1", "gate-2"]}}, "required": ["gate_id"]},
+      "then": {"not": {"required": ["subgates"]}}
+    }
+  ],
+  "$defs": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_id", "required", "status", "expected_ref", "observed_hash", "reason_code"],
+      "properties": {
+        "check_id": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"},
+        "status": {"type": "string", "enum": ["pass", "fail", "deferred"]},
+        "expected_ref": {"type": "string", "minLength": 1},
+        "observed_hash": {
+          "description": "Exactly 64 lowercase hex characters, or null. Never an empty string.",
+          "oneOf": [
+            {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            {"type": "null"}
+          ]
+        },
+        "reason_code": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "description": "GLOBAL-04/07: only the two named optional checks may be deferred, and a deferred check must be required:false.",
+          "if": {"properties": {"status": {"const": "deferred"}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "required": {"const": false},
+              "check_id": {"enum": ["G3-RI-QWEN-01", "week-scale-retest-bank-comparison"]}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

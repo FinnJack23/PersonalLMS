@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "status": "candidate_pending_technical_review",
+  "learner_vector_id": "native-gap",
+  "objective_ref": "ccna-200-301-v1.1:2.2",
+  "description": "Misses native-VLAN agreement and one-sided verification on baseline; corrects after remediation but needs a conceptual hint during the CLI scenario, so the attempt is guided rather than unhinted.",
+  "baseline_responses": [
+    {"item_id": "11111111-1111-4111-8111-000000000001", "answer": {"selected_option_id": "a"}, "confidence": 5, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000002", "answer": "The tag carries the VLAN ID so switches know which VLAN a frame is from on a trunk.", "confidence": 4, "expected_disposition": "graded", "expected_correct": true, "expected_points": 10},
+    {"item_id": "11111111-1111-4111-8111-000000000003", "answer": {"selected_option_id": "b"}, "confidence": 3, "expected_disposition": "graded", "expected_correct": false, "misconception_tag": "native_vlan_behavior_error"},
+    {"item_id": "11111111-1111-4111-8111-000000000004", "answer": {"tagged": true, "vlan_id": 10}, "confidence": 4, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000005", "answer": {"tagged": true, "vlan_id": 99}, "confidence": 2, "expected_disposition": "graded", "expected_correct": false, "misconception_tag": "native_vlan_behavior_error"},
+    {"item_id": "11111111-1111-4111-8111-000000000006", "answer": {"selected_option_ids": ["a", "b", "d"]}, "confidence": 5, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000007", "answer": {"order": ["s1", "s2", "s3", "s4", "s5", "s6"]}, "confidence": 4, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000008", "answer": {"command": "switchport trunk allowed vlan 99"}, "confidence": 2, "expected_disposition": "graded", "expected_correct": false, "misconception_tag": "native_vlan_behavior_error"},
+    {"item_id": "11111111-1111-4111-8111-000000000009", "answer": {"command": "switchport trunk allowed vlan add 20"}, "confidence": 4, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000010", "answer": {"fault": "trunk_down", "revealing_command": "show interfaces trunk"}, "confidence": 2, "expected_disposition": "graded", "expected_correct": false, "misconception_tag": ["native_vlan_behavior_error", "verification_one_sided"]},
+    {"item_id": "11111111-1111-4111-8111-000000000011", "answer": "Run show interfaces trunk on LAB-SW2.", "confidence": 3, "expected_disposition": "graded", "expected_correct": false, "misconception_tag": "verification_one_sided", "review_note": "Checks only one end; misses the both-ends requirement."},
+    {"item_id": "11111111-1111-4111-8111-000000000012", "answer": "Most likely a native VLAN mismatch on the LAB-SW2-to-LAB-SW3 link: LAB-SW3 uses native VLAN 1 but LAB-SW2 uses 99, so untagged VLAN 99 traffic is misdelivered. I would run 'show interfaces trunk' on both ends of that link and compare the Native fields.", "confidence": 2, "expected_disposition": "graded", "expected_correct": true, "expected_points": 10, "review_note": "v2 fix: the prior response (\"probably has a config problem... I would check the switches\") satisfied NEITHER rubric criterion yet was scored 10/10. Rewritten to a concise but technically correct answer that explicitly (a) identifies the native VLAN mismatch root cause [+6] and (b) proposes a valid both-ends 'show interfaces trunk' verification [+4] = 10/10. Confidence stays low (2) but must not affect the grade. Facet arithmetic is unchanged because this item was already counted correct."}
+  ],
+  "expected_evaluator_findings": [
+    {"finding_id": "finding-native-gap-01", "misconception_tag": "native_vlan_behavior_error", "severity": "material", "observed_grade_ids_for_items": ["11111111-1111-4111-8111-000000000003", "11111111-1111-4111-8111-000000000005", "11111111-1111-4111-8111-000000000008", "11111111-1111-4111-8111-000000000010"]},
+    {"finding_id": "finding-native-gap-02", "misconception_tag": "verification_one_sided", "severity": "material", "observed_grade_ids_for_items": ["11111111-1111-4111-8111-000000000010", "11111111-1111-4111-8111-000000000011"]}
+  ],
+  "expected_followup_selection": {
+    "trigger_codes": ["native_vlan_behavior_error", "verification_one_sided"],
+    "approved_item_ids": [
+      "22222222-2222-4222-8222-000000000003",
+      "22222222-2222-4222-8222-000000000005"
+    ]
+  },
+  "followup_responses": [
+    {"item_id": "22222222-2222-4222-8222-000000000003", "answer": "LAB-SW1 places the frame into VLAN 1, its own configured native VLAN, not VLAN 99. That leaks the traffic across the intended VLAN boundary, which is the native VLAN mismatch problem.", "expected_correct": true, "expected_points": 10},
+    {"item_id": "22222222-2222-4222-8222-000000000005", "answer": {"order": ["s1", "s2", "s3", "s4"]}, "expected_correct": true}
+  ],
+  "cli_attempt": {
+    "equivalence_case_ref": "eq-separate-commands",
+    "hint_ids_used": ["compare-both-ends"],
+    "expected_final_state_sha256": "6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38",
+    "expected_lab_grade": {"final_state": 45, "verification": 25, "localization_repair": 15, "minimality": 10, "rationale": 5, "total": 100},
+    "attempt_marked": "guided",
+    "review_note": "Final state and grade points are unaffected by the conceptual hint (the design caps only command-level hints numerically), but hint_ids_used being non-empty means this attempt cannot satisfy require_all_blueprint_elements_unhinted."
+  },
+  "exit_probe_response": {
+    "item_id": "33333333-3333-4333-8333-000000000001",
+    "answer": {
+      "fault": "allowed_vlan_omission",
+      "omitted_vlan": 20,
+      "omitted_on_device": "lab-sw2",
+      "correct_command": "switchport trunk allowed vlan add 20",
+      "verification_command": "show interfaces trunk"
+    },
+    "hint_ids_used": [],
+    "expected_criteria_awarded": ["identifies-fault-and-device", "correct-repair-command", "verification-plan"],
+    "expected_total": 100
+  },
+  "expected_facet_derivation": {
+    "arithmetic_contract": "v2.1: all component means and facet/overall scores are computed as EXACT rationals (no intermediate rounding). ROUND_HALF_UP to 2 decimals is applied ONLY to stored/displayed values. Displayed 2dp facet values below are OUTPUTS and must never be fed back as inputs to compute overall_M. See fixture-manifest.yaml#/arithmetic_contract.",
+    "exact_inputs": {
+      "B_C": "200/3", "B_C_note": "items 1,2 correct / item 3 incorrect = 2 of 3 = 200/3",
+      "B_T": "200/3", "B_T_note": "items 4,6 correct / item 5 incorrect = 2 of 3 = 200/3",
+      "B_K": "200/3", "B_K_note": "items 7,9 correct / item 8 incorrect = 2 of 3 = 200/3",
+      "B_V": "0", "B_V_note": "items 10,11 both incorrect = 0 of 2 = 0",
+      "B_X": "100",
+      "E_T": "100", "E_V": "100", "E_X": "100",
+      "L_K": "100", "L_V": "100"
+    },
+    "exact_facets": {
+      "C": "200/3",
+      "T": "230/3", "T_formula": "0.70*(200/3) + 0.30*100 = 140/3 + 30 = 230/3",
+      "K": "275/3", "K_formula": "0.25*(200/3) + 0.75*100 = 50/3 + 75 = 275/3",
+      "V": "80", "V_formula": "0.20*0 + 0.20*100 + 0.60*100 = 80",
+      "X": "100", "X_formula": "0.50*100 + 0.50*100 = 100"
+    },
+    "exact_overall_M": "497/6",
+    "overall_M_formula": "0.15*(200/3) + 0.20*(230/3) + 0.30*(275/3) + 0.25*80 + 0.10*100 = 158.5/3 + 30 = 497/6 = 82.8333...",
+    "displayed_2dp_OUTPUT_ONLY": {"C": "66.67", "T": "76.67", "K": "91.67", "V": "80.00", "X": "100.00", "overall_M": "82.83"},
+    "rounding_trap_note": "Computing overall_M from the displayed 2dp facets would give 82.84 (wrong). The frozen exact rule gives 497/6 -> 82.83."
+  },
+  "expected_outcome": {
+    "progress_phase": "complete",
+    "achievement_status": "none",
+    "review_status": "scheduled",
+    "evidence_status": "ready",
+    "required_observations_complete": true,
+    "critical_error": false,
+    "schedule_band": "score_75_to_84_days",
+    "reason_codes": [
+      "overall_below_acquisition_minimum",
+      "concept_facet_below_75",
+      "cli_attempt_not_unhinted"
+    ],
+    "review_note": "This vector deliberately fails acquisition on three independent grounds (overall 82.83 < 85, C=66.67 < 75, and the guided CLI attempt) even though verification_troubleshooting (V=80.0) and cli_configuration (K=91.67) individually clear their thresholds, to exercise partial-gate-failure reporting rather than a single-cause failure."
+  }
+}

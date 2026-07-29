@@ -1,0 +1,82 @@
+schema_version: "1.0"
+status: technical_approval_complete
+objective_ref: ccna-200-301-v1.1:2.2
+bank_version: 1
+exposure_class: exit_probe
+maximum_items: 1
+require_unhinted: true
+require_different_form: true
+total_minimum: 80
+every_emitted_facet_minimum: 75
+allow_critical_or_contradictory_response: false
+required_facets: [topology_reasoning, verification_troubleshooting, novel_transfer]
+
+alan_approval:
+  reviewer: alan
+  reviewed_on: "2026-07-28"
+  source: codex_conversation_user_message
+  approved_item_ids: [33333333-3333-4333-8333-000000000001]
+  scope: the complete exit probe in the pending-content packet
+
+items:
+  - item_id: 33333333-3333-4333-8333-000000000001
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+    construct: exit_probe
+    item_type: topology_trace
+    difficulty: transfer
+    concept_tags:
+      - trunk_verification
+      - native_vlan_mismatch
+      - allowed_vlan_set
+      - multi_switch_reasoning
+    elements: [trunk_ports, dot1q, native_vlan]
+    claim_ids:
+      - claim-trunk-verification-state
+      - claim-native-vlan-agreement
+      - claim-allowed-vlan-effect
+    different_form_from_baseline_items:
+      - 11111111-1111-4111-8111-000000000010
+      - 11111111-1111-4111-8111-000000000012
+    prompt: >-
+      LAB-SW1 Gi0/1 and LAB-SW2 Gi0/1 both report "trunking" and "up".
+      A user on VLAN 20 attached to LAB-SW1 cannot reach a VLAN 20 host
+      on LAB-SW2, but a VLAN 10 user on the same link can reach across
+      without issue. LAB-SW1's synthetic "show interfaces trunk" output
+      shows Native 99, Allowed 10,20,99. LAB-SW2's shows Native 99,
+      Allowed 10,99. Identify the fault, give the exact command that
+      corrects it on LAB-SW2, and explain how you would verify the fix
+      without hints.
+    response_schema: topology_trace_v1
+    answer_key:
+      fault: allowed_vlan_omission
+      omitted_vlan: 20
+      omitted_on_device: lab-sw2
+      correct_command: "switchport trunk allowed vlan add 20"
+      verification_command: "show interfaces trunk"
+    rubric:
+      - criterion_id: identifies-fault-and-device
+        facet: topology_reasoning
+        description: >-
+          Correctly identifies that VLAN 20 is missing from LAB-SW2's
+          allowed VLAN list (not a native VLAN problem, since native
+          VLANs already agree at 99).
+        points: 34
+      - criterion_id: correct-repair-command
+        facet: verification_troubleshooting
+        description: >-
+          States the exact repair command "switchport trunk allowed vlan
+          add 20" (or the equivalent full-replacement form that still
+          includes 10, 20, and 99).
+        points: 33
+      - criterion_id: verification-plan
+        facet: novel_transfer
+        description: >-
+          Describes verifying the fix with "show interfaces trunk" (or
+          equivalent) on LAB-SW2 after the change, checked against
+          LAB-SW1's output, without requesting a hint.
+        points: 33
+    points_possible: 100
+    facet_score_mapping:
+      topology_reasoning: [identifies-fault-and-device]
+      verification_troubleshooting: [correct-repair-command]
+      novel_transfer: [verification-plan]

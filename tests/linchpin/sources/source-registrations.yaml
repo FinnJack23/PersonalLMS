@@ -1,0 +1,120 @@
+schema_version: "1.0"
+status: candidate_kept_and_approved_pending_human_review
+review_note: >
+  v2.1 freeze-hardening. Each record in `sources` now carries ONLY documented
+  SourceArtifact fields (07-DATA-CONTRACTS SourceArtifact). The non-contract
+  fields required by the review (file_size_bytes, magic_bytes, pixel_dimensions)
+  are moved OUT of the strict records into the explicitly declared
+  `fixture_ext_sources` envelope, which is described by
+  schemas/fixture-extensions.schema.json. No strict record relies on permissive
+  parsing. The wrong-blueprint distractor uses SourceArtifact.status:
+  quarantined (documented enum) with a stable reason code in
+  source_review_ledger. Human reviewer_id for source-content sign-off remains
+  pending (RC-06 covers only the two infographic image REGIONS, which are
+  approved in claims.yaml; source-level content sign-off is separate).
+
+# =====================================================================
+# SourceArtifact records — documented fields only.
+# =====================================================================
+sources:
+  - schema_version: "1.0"
+    source_id: src-objective-2.2-synthetic-pdf
+    sha256: 9ac8bca34e76df94fa93509c1ecf1f42ae8792e4502c381a79493b9d166adcd6
+    media_type: application/pdf
+    title: "Interswitch Connectivity Study Notes (Synthetic)"
+    publisher: personal-lms-fixture-authoring
+    edition_or_version: "2.0"
+    published_on: "2026-07-27"
+    retrieved_on: "2026-07-27"
+    rights_basis: user_created
+    rights_reference_id: null
+    rights_url: null
+    attribution_text: null
+    obligations: []
+    permission_expires_on: null
+    license_note: >-
+      Independently authored synthetic fixture content, not derived from any
+      Cisco or third-party publication. Created solely for Personal LMS
+      engineering review and testing.
+    permitted_uses: [local_extract, local_index, local_teach, derived_item]
+    allowed_claim_types: [technical_fact, worked_example]
+    current_for_blueprints: ["200-301-v1.1"]
+    status: registered
+
+  - schema_version: "1.0"
+    source_id: src-objective-2.2-infographic-png
+    sha256: c8355b3514fa3c2aa48c87e48c3945a19fdf886423b5c902db968ee0351805cd
+    media_type: image/png
+    title: "Interswitch Trunk Topology (Synthetic Fixture)"
+    publisher: personal-lms-fixture-authoring
+    edition_or_version: "1.0"
+    published_on: "2026-07-27"
+    retrieved_on: "2026-07-27"
+    rights_basis: user_created
+    rights_reference_id: null
+    rights_url: null
+    attribution_text: null
+    obligations: []
+    permission_expires_on: null
+    license_note: >-
+      Independently drawn synthetic topology diagram; no vendor logos,
+      screenshots, or copied device output.
+    permitted_uses: [local_extract, local_index, local_teach, derived_item]
+    allowed_claim_types: [visual_explanation]
+    current_for_blueprints: ["200-301-v1.1"]
+    status: registered
+
+  - schema_version: "1.0"
+    source_id: src-wrong-blueprint-source-pdf
+    sha256: 91aab28a829d3b362e2d95e8817f4dc56a0c74faab10428f8459b92082cf7f41
+    media_type: application/pdf
+    title: "CCNA 200-301 v2.0 Exam Topics Excerpt (Synthetic)"
+    publisher: personal-lms-fixture-authoring
+    edition_or_version: "1.0"
+    published_on: "2026-07-27"
+    retrieved_on: "2026-07-27"
+    rights_basis: user_created
+    rights_reference_id: null
+    rights_url: null
+    attribution_text: null
+    obligations: []
+    permission_expires_on: null
+    license_note: >-
+      Deliberately wrong-version distractor fixture. Exists only to prove
+      version-based retrieval exclusion (G1-NG-04); must never be treated as
+      eligible evidence for any v1.1 objective.
+    permitted_uses: []
+    allowed_claim_types: []
+    current_for_blueprints: ["200-301-v2.0"]
+    status: quarantined
+
+# =====================================================================
+# Fixture-only extension envelope (NOT part of the domain SourceArtifact).
+# Declared by schemas/fixture-extensions.schema.json. Keeps byte-size / magic
+# / pixel metadata out of the strict records.
+# =====================================================================
+fixture_ext_schema: schemas/fixture-extensions.schema.json
+fixture_ext_sources:
+  - source_id: src-objective-2.2-synthetic-pdf
+    file_size_bytes: 3252
+    magic_bytes_hex: "255044462d312e34"          # %PDF-1.4
+  - source_id: src-objective-2.2-infographic-png
+    file_size_bytes: 16892
+    magic_bytes_hex: "89504e470d0a1a0a"          # PNG signature
+    pixel_dimensions: [900, 500]
+  - source_id: src-wrong-blueprint-source-pdf
+    file_size_bytes: 1398
+    magic_bytes_hex: "255044462d312e34"          # %PDF-1.4
+
+# =====================================================================
+# Source review ledger: stable reason codes for any non-registered source.
+# =====================================================================
+source_review_ledger:
+  - source_id: src-wrong-blueprint-source-pdf
+    status: quarantined
+    reason_code: wrong_blueprint_version
+    linchpin_case: G1-NG-04
+    note: >-
+      Pinned to blueprint v2.0. Quarantined so it can never be promoted,
+      indexed, retrieved, or cited for a v1.1 objective-2.2 query, even
+      though its topic keywords overlap.

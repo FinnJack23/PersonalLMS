@@ -11,6 +11,10 @@ from pydantic import ValidationError
 from personal_lms import __version__
 from personal_lms.config import AppConfig, AppConfigError
 from personal_lms.domain.models import ModelRequest
+from personal_lms.labs.ccna_mastery.cli import (
+    handle_ccna_lab_command,
+    register_ccna_lab_commands,
+)
 from personal_lms.policies.errors import RoutingError
 from personal_lms.providers.errors import ProviderError
 
@@ -46,6 +50,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     demo_parser.add_argument("--host", default="127.0.0.1")
     demo_parser.add_argument("--port", type=int, default=8000)
+
+    # Nested lab commands are registered from their own handler module,
+    # keeping this parser the single console entry point. The import is
+    # top-level-safe: labs.ccna_mastery.cli depends only on the core
+    # install (no crewai, ollama, or hosted-provider extra), so
+    # `personal-lms --version` keeps working in a core-only environment.
+    register_ccna_lab_commands(subparsers)
 
     return parser
 
@@ -115,6 +126,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         from personal_lms.build_week_demo import serve
 
         serve(args.host, args.port)
+    if args.command == "ccna-lab":
+        return handle_ccna_lab_command(args)
 
     return 0
 

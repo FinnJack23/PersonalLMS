@@ -1,0 +1,86 @@
+{
+  "artifact_kind": "P0_CANDIDATE_SPECIFICATION",
+  "not_a_gate_report": true,
+  "note": "Freezes the four scripted learners' exact target dispositions, facet derivations, and outcomes per learners/*.json, for WP4-WP8 implementers to reproduce and for a reviewer to check the real Gate 2 golden against later. Not an executable GateReport instance.",
+  "v2_repair_note": "Learner facet arithmetic independently recomputed with Decimal from the (repaired) baseline item facets and response vectors: clean-pass M=100, native-gap M=82.83, ambiguous BLOCKED (review_required, no numeric M), injection M=100 == clean-pass.",
+  "v2_1_arithmetic_contract": "All component means and facet/overall scores are computed as EXACT rationals (Fraction) with NO intermediate rounding; ROUND_HALF_UP to 2 decimals applies ONLY to stored/displayed values. Displayed 2dp facets are outputs, never inputs. Verified with Python Fraction: native-gap overall M = 497/6 = 82.8333... -> 82.83 (NOT 82.84, which is the wrong result of computing M from displayed 2dp facets). All four learners re-verified under this rule. Frozen in fixture-manifest.yaml#/arithmetic_contract.",
+  "facet_values_are_display_only": true,
+  "gate_id": "gate-2",
+  "objective_ref": "ccna-200-301-v1.1:2.2",
+  "learners": {
+    "clean-pass": {
+      "source": "learners/clean-pass.json",
+      "baseline_correct_count": 12,
+      "followups_selected": [],
+      "cli_final_state_sha256": "6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38",
+      "cli_hint_ids_used": [],
+      "exit_probe_total": 100,
+      "facets": {"C": 100, "T": 100, "K": 100, "V": 100, "X": 100},
+      "overall_M": 100,
+      "achievement_status": "acquired",
+      "review_status": "scheduled",
+      "evidence_status": "ready"
+    },
+    "native-gap": {
+      "source": "learners/native-gap.json",
+      "baseline_correct_count": 7,
+      "followups_selected": [
+        "22222222-2222-4222-8222-000000000003",
+        "22222222-2222-4222-8222-000000000005"
+      ],
+      "cli_final_state_sha256": "6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38",
+      "cli_hint_ids_used": ["compare-both-ends"],
+      "cli_attempt_marked": "guided",
+      "exit_probe_total": 100,
+      "facets": {"C": 66.67, "T": 76.67, "K": 91.67, "V": 80.0, "X": 100},
+      "overall_M": 82.83,
+      "achievement_status": "none",
+      "review_status": "scheduled",
+      "evidence_status": "ready",
+      "schedule_band": "score_75_to_84_days"
+    },
+    "ambiguous": {
+      "source": "learners/ambiguous.json",
+      "baseline_correct_count": 11,
+      "baseline_review_required_item_ids": ["11111111-1111-4111-8111-000000000002"],
+      "followups_selected": [],
+      "cli_final_state_sha256": "6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38",
+      "cli_hint_ids_used": [],
+      "exit_probe_total": 100,
+      "facets": null,
+      "overall_M": null,
+      "achievement_status": "none",
+      "review_status": "none",
+      "evidence_status": "review_required",
+      "required_observations_complete": false
+    },
+    "injection": {
+      "source": "learners/injection.json",
+      "baseline_correct_count": 12,
+      "followups_selected": [],
+      "cli_final_state_sha256": "6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38",
+      "cli_hint_ids_used": [],
+      "exit_probe_total": 100,
+      "facets": {"C": 100, "T": 100, "K": 100, "V": 100, "X": 100},
+      "overall_M": 100,
+      "achievement_status": "acquired",
+      "review_status": "scheduled",
+      "evidence_status": "ready",
+      "must_equal_learner": "clean-pass",
+      "must_equal_fields": ["facets", "overall_M", "achievement_status", "review_status", "evidence_status", "schedule_band"]
+    }
+  },
+  "session_bound_checks": [
+    {"check_id": "G2-GO-01", "target": "Exactly 12 baseline items presented to every learner.", "satisfied_by_current_content": true},
+    {"check_id": "G2-GO-02", "target": "0-6 followups from deterministic mappings only.", "satisfied_by_current_content": true, "evidence": "native-gap selects exactly 2, all others select 0; all selections trace to the trigger table in followup-items.yaml."},
+    {"check_id": "G2-GO-03", "target": "At most one adaptive round, one CLI scenario, one exit probe per learner.", "satisfied_by_current_content": true},
+    {"check_id": "G2-GO-09", "target": "clean-pass receives acquired, never retained_mastery.", "satisfied_by_current_content": true},
+    {"check_id": "G2-LR-03", "target": "ambiguous receives review_required, no numeric substitution or mastery.", "satisfied_by_current_content": true},
+    {"check_id": "G2-LR-04", "target": "injection: learner injection is data; deterministic outcome unchanged.", "satisfied_by_current_content": true, "evidence": "injection's expected_outcome is byte-for-byte identical to clean-pass's facets/overall_M/achievement/review/evidence status."}
+  ],
+  "pending_implementation_fields": [
+    "grade_id values (require DeterministicGrader)",
+    "policy_version-bound reproduction (requires MasteryEvaluator)",
+    "actual due_at instant (requires ReviewScheduler + timezone resolution, not just the schedule band named here)"
+  ]
+}

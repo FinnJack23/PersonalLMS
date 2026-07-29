@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0",
+  "status": "candidate_pending_technical_review",
+  "objective_ref": "ccna-200-301-v1.1:2.2",
+  "supported_cases": [
+    {
+      "case_id": "rc-01",
+      "kind": "exact_technical_term",
+      "query": "What does an 802.1Q trunk carry?",
+      "expected_evidence_ids": ["evid-trunk-multi-vlan-p1"],
+      "expected_top_k": 5
+    },
+    {
+      "case_id": "rc-02",
+      "kind": "exact_technical_term",
+      "query": "What does the 802.1Q tag contain?",
+      "expected_evidence_ids": ["evid-dot1q-tag-p1"],
+      "expected_top_k": 5
+    },
+    {
+      "case_id": "rc-03",
+      "kind": "conceptual_paraphrase",
+      "query": "How is traffic for the native VLAN sent across a trunk link?",
+      "expected_evidence_ids": ["evid-native-untagged-p1", "evid-infographic-native-region"],
+      "expected_top_k": 5
+    },
+    {
+      "case_id": "rc-04",
+      "kind": "conceptual_paraphrase",
+      "query": "What goes wrong if the native VLAN differs at each end of a trunk?",
+      "expected_evidence_ids": ["evid-native-agreement-p2"],
+      "expected_top_k": 5
+    },
+    {
+      "case_id": "rc-05",
+      "kind": "conceptual_paraphrase",
+      "query": "What does the allowed VLAN list control on a trunk interface?",
+      "expected_evidence_ids": ["evid-allowed-vlan-p2", "evid-infographic-allowed-region"],
+      "expected_top_k": 5
+    },
+    {
+      "case_id": "rc-06",
+      "kind": "cli_output",
+      "query": "What fields does show interfaces trunk report?",
+      "expected_evidence_ids": ["evid-verify-trunk-p2"],
+      "expected_top_k": 5
+    },
+    {
+      "case_id": "rc-07",
+      "kind": "cli_output",
+      "query": "Synthetic show interfaces trunk output for Gi0/1",
+      "expected_evidence_ids": ["evid-synthetic-show-p3"],
+      "expected_top_k": 5
+    },
+    {
+      "case_id": "rc-08",
+      "kind": "diagram_region",
+      "query": "Native VLAN label on the trunk topology diagram",
+      "expected_evidence_ids": ["evid-infographic-native-region"],
+      "expected_top_k": 5
+    },
+    {
+      "case_id": "rc-09",
+      "kind": "diagram_region",
+      "query": "Allowed VLANs caption on the trunk topology diagram",
+      "expected_evidence_ids": ["evid-infographic-allowed-region"],
+      "expected_top_k": 5
+    },
+    {
+      "case_id": "rc-10",
+      "kind": "conceptual_paraphrase",
+      "query": "Can one trunk interface carry more than one VLAN's traffic?",
+      "expected_evidence_ids": ["evid-trunk-multi-vlan-p1"],
+      "expected_top_k": 5
+    }
+  ],
+  "unsupported_cases": [
+    {
+      "case_id": "rc-11",
+      "kind": "deliberately_unsupported_no_evidence",
+      "query": "What is the maximum transmission unit supported for jumbo frames on this trunk?",
+      "expected_abstention_reason_code": "no_supporting_evidence_in_eligible_corpus"
+    },
+    {
+      "case_id": "rc-12",
+      "kind": "deliberately_unsupported_wrong_version",
+      "query": "Layer 2 802.1Q trunk interfaces under CCNA 200-301 v2.0 objective 2.1.b",
+      "note": "Lexically overlaps evid-wrong-blueprint-p1 but must abstain: that source is pinned to blueprint v2.0, not the requested v1.1 objective 2.2 scope.",
+      "expected_abstention_reason_code": "wrong_blueprint_version_excluded",
+      "must_never_return": ["evid-wrong-blueprint-p1"]
+    }
+  ]
+}

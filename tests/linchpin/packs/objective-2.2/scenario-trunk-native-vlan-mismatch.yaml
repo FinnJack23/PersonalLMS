@@ -1,0 +1,350 @@
+schema_version: "1.0"
+status: technical_approval_complete
+review_note: >
+  v2: KEPT AND APPROVED at this path (RC-02 disposition: kept). The prompt's
+  exact fixture-tree listing enumerates only claims/baseline/followup/
+  exit-probe under packs/objective-2.2/, but cli_requirement.scenario_refs
+  and Gate 2/WP5 require a frozen scenario definition and no other path was
+  specified, so this path is retained. Both equivalence sequences were
+  executed through a reference simulator (see equivalence_cases.
+  execution_provenance). Alan approved the complete device state, grammar,
+  transcripts, grading, hints, and stated Gate 2 limitation on 2026-07-28.
+
+alan_approval:
+  reviewer: alan
+  reviewed_on: "2026-07-28"
+  source: codex_conversation_user_message
+  scope: complete scenario content and explicit Gate 2 production-engine limitation
+
+scenario:
+  scenario_ref: trunk-native-vlan-mismatch@1.0.0
+  scenario_id: trunk-native-vlan-mismatch
+  version: "1.0.0"
+  objective_ref: ccna-200-301-v1.1:2.2
+  title: Repair an interswitch trunk
+  engine: clean-room-switch-state
+  grammar_version: trunk-cli-v1
+  status: approved
+  technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+  seed: 220099
+  estimated_minutes: 12
+  hard_time_budget_minutes: 20
+  maximum_hints: 2
+  starting_state_sha256: 1a690fc8dd23e944db746347732a5e3b063baad7dac05290e964946c90e93f90
+  starting_state_hash_method: >-
+    sha256(json.dumps(canonical_payload, sort_keys=True,
+    separators=(',',':')).encode('utf-8')), where canonical_payload =
+    {command_mode, current_device, devices: {device_id: {vlans: sorted
+    list, interfaces: {interface_id: {admin_up, oper_up,
+    switchport_mode, tagging, native_vlan, allowed_vlans: sorted list}}}}}
+    with device/interface keys sorted and no timestamps, display text, or
+    event IDs included. Independently recomputed in fixture-manifest.yaml.
+  target_repaired_state_sha256: 6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38
+  concept_tags:
+    - dot1q_tagging
+    - native_vlan_behavior
+    - allowed_vlan_set
+    - trunk_verification
+    - native_vlan_mismatch
+    - corrective_configuration
+
+brief:
+  learner_text: >
+    Users associated with one VLAN cannot communicate across the link
+    between LAB-SW1 and LAB-SW2. Inspect both ends, identify every
+    relevant mismatch, make the minimum correction on LAB-SW2, verify
+    the result, and submit both structured fault findings and the
+    relevant cause codes.
+  topology_text: >
+    LAB-SW1 Gi0/1 connects directly to LAB-SW2 Gi0/1. Both interfaces
+    should be 802.1Q trunks carrying VLANs 10, 20, and 99. VLAN 99
+    should be native.
+
+topology:
+  nodes:
+    - {node_id: host-a, node_type: host, attached_to: lab-sw1, access_vlan: 20}
+    - {node_id: lab-sw1, node_type: synthetic_switch}
+    - {node_id: lab-sw2, node_type: synthetic_switch}
+    - {node_id: host-b, node_type: host, attached_to: lab-sw2, access_vlan: 20}
+  links:
+    - link_id: interswitch-1
+      endpoint_a: lab-sw1:gi0/1
+      endpoint_b: lab-sw2:gi0/1
+      operational_state: up
+
+initial_state:
+  current_device: lab-sw2
+  command_mode: operator
+  devices:
+    lab-sw1:
+      vlans: [10, 20, 99]
+      interfaces:
+        gi0/1:
+          admin_up: true
+          oper_up: true
+          switchport_mode: trunk
+          tagging: dot1q
+          native_vlan: 99
+          allowed_vlans: [10, 20, 99]
+    lab-sw2:
+      vlans: [10, 20, 99]
+      interfaces:
+        gi0/1:
+          admin_up: true
+          oper_up: true
+          switchport_mode: trunk
+          tagging: dot1q
+          native_vlan: 1
+          allowed_vlans: [10, 99]
+
+target_invariants:
+  - invariant_id: lab-sw1-port-trunk
+    severity: critical
+    predicate: {type: field_equals, target: {device_id: lab-sw1, interface_id: gi0/1, field: switchport_mode}, expected: trunk}
+  - invariant_id: lab-sw2-port-trunk
+    severity: critical
+    predicate: {type: field_equals, target: {device_id: lab-sw2, interface_id: gi0/1, field: switchport_mode}, expected: trunk}
+  - invariant_id: link-remains-up
+    severity: critical
+    predicate: {type: link_state_equals, link_id: interswitch-1, expected: up}
+  - invariant_id: lab-sw1-native-vlan
+    severity: critical
+    predicate: {type: field_equals, target: {device_id: lab-sw1, interface_id: gi0/1, field: native_vlan}, expected: 99}
+  - invariant_id: lab-sw2-native-vlan
+    severity: critical
+    predicate: {type: field_equals, target: {device_id: lab-sw2, interface_id: gi0/1, field: native_vlan}, expected: 99}
+  - invariant_id: lab-sw1-required-vlans-allowed
+    severity: critical
+    predicate: {type: set_contains_all, target: {device_id: lab-sw1, interface_id: gi0/1, field: allowed_vlans}, required: [10, 20, 99]}
+  - invariant_id: lab-sw2-required-vlans-allowed
+    severity: critical
+    predicate: {type: set_contains_all, target: {device_id: lab-sw2, interface_id: gi0/1, field: allowed_vlans}, required: [10, 20, 99]}
+  - invariant_id: lab-sw1-required-vlans-exist
+    severity: critical
+    predicate: {type: set_contains_all, target: {device_id: lab-sw1, field: vlans}, required: [10, 20, 99]}
+  - invariant_id: lab-sw2-required-vlans-exist
+    severity: critical
+    predicate: {type: set_contains_all, target: {device_id: lab-sw2, field: vlans}, required: [10, 20, 99]}
+
+known_faults:
+  - fault_id: native-mismatch
+    device: lab-sw2
+    interface: gi0/1
+    observed: native_vlan=1
+    expected: native_vlan=99
+    misconception_tag: native_vlan_mismatch
+  - fault_id: allowed-vlan-omission
+    device: lab-sw2
+    interface: gi0/1
+    observed: allowed_vlans=[10,99]
+    expected: allowed_vlans=[10,20,99]
+    misconception_tag: allowed_vlan_omission
+
+equivalence_cases_execution_provenance: >-
+  v2: both sequences in equivalence_cases were EXECUTED through a stdlib
+  clean-room reference simulator (P0 verification scaffolding, not the Gate
+  2 production engine). Both reach expected_final_state_sha256 exactly, both
+  end at current_device=lab-sw2 / command_mode=privileged, and each
+  satisfies verification_policy (pre-change observe_trunk_summary +
+  observe_switchport on BOTH lab-sw1 and lab-sw2; post-change on lab-sw2).
+  Two records naming the same hash is not the proof; the executed run is.
+  Starting hash 1a690fc8..., target hash 6a7d2785...
+
+equivalence_cases:
+  - case_id: eq-separate-commands
+    description: >-
+      Native VLAN and allowed VLAN corrected with two separate commands,
+      with the required pre-change observations on both switches and
+      post-change observations on LAB-SW2.
+    command_sequence:
+      - "enable"
+      - "show interfaces trunk"                       # lab-sw2 pre
+      - "show interface gi0/1 switchport"             # lab-sw2 pre
+      - "connect lab-sw1"
+      - "show interfaces trunk"                       # lab-sw1 pre
+      - "show interface gi0/1 switchport"             # lab-sw1 pre
+      - "connect lab-sw2"
+      - "configure terminal"
+      - "interface gi0/1"
+      - "switchport trunk native vlan 99"
+      - "switchport trunk allowed vlan 10,20,99"
+      - "end"
+      - "show interfaces trunk"                       # lab-sw2 post
+      - "show interface gi0/1 switchport"             # lab-sw2 post
+      - "diagnose native-vlan-mismatch device=lab-sw2 interface=gi0/1 expected=99"
+      - "diagnose allowed-vlan-omission device=lab-sw2 interface=gi0/1 vlan=20"
+      - "submit rationale endpoint-agreement,allowed-set-end-to-end"
+      - "submit solution"
+    executed: true
+    verification_policy_satisfied: true
+    expected_final_state_sha256: 6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38
+  - case_id: eq-incremental-allowed-vlan
+    description: >-
+      Allowed VLAN corrected with the incremental "add" form, native VLAN
+      corrected first, with the same required pre/post observations.
+    command_sequence:
+      - "enable"
+      - "show interfaces trunk"                       # lab-sw2 pre
+      - "show interface gi0/1 switchport"             # lab-sw2 pre
+      - "connect lab-sw1"
+      - "show interfaces trunk"                       # lab-sw1 pre
+      - "show interface gi0/1 switchport"             # lab-sw1 pre
+      - "connect lab-sw2"
+      - "configure terminal"
+      - "interface gi0/1"
+      - "switchport trunk allowed vlan add 20"
+      - "switchport trunk native vlan 99"
+      - "end"
+      - "show interfaces trunk"                       # lab-sw2 post
+      - "show interface gi0/1 switchport"             # lab-sw2 post
+      - "diagnose allowed-vlan-omission device=lab-sw2 interface=gi0/1 vlan=20"
+      - "diagnose native-vlan-mismatch device=lab-sw2 interface=gi0/1 expected=99"
+      - "submit rationale endpoint-agreement,allowed-set-end-to-end"
+      - "submit solution"
+    executed: true
+    verification_policy_satisfied: true
+    expected_final_state_sha256: 6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38
+    grammar_note: >-
+      RC-03 RESOLVED (kept & approved): the "switchport trunk allowed vlan
+      add <vlan_list>" incremental-add form is in scope and distinct from
+      the full-replacement form. It is declared in command_grammar below
+      (operation add_allowed_vlans) and exercised by this sequence and by
+      baseline item ...000009 / followup item ...000004.
+
+command_grammar:
+  allow_abbreviations: unambiguous_only
+  case_sensitive: false
+  # v2.1 determinism rule (H3): productions match MOST-SPECIFIC-FIRST, and the
+  # generic replacement production "switchport trunk allowed vlan <vlan_list>"
+  # treats "add"/"remove"/"except"/"none" as RESERVED sub-command tokens: its
+  # <vlan_list> operand must begin with an integer (1..4094), never a reserved
+  # token. So "switchport trunk allowed vlan add 20" can ONLY bind to
+  # add_allowed_vlans, never replace_allowed_vlans -- enforced by ordering AND
+  # operand token validation, so parsing is unambiguous under any match
+  # strategy. Executed proof: see equivalence_cases_execution_provenance.
+  match_strategy: most_specific_first
+  reserved_allowed_vlan_subcommand_tokens: [add, remove, except, none]
+  vlan_list_operand_rule: >-
+    Comma-separated integers and ascending A-B ranges, each 1..4094, no
+    duplicates after normalization; the first token must be an integer, never a
+    reserved sub-command token.
+  commands:
+    - {mode: any, pattern: help, operation: render_help}
+    - {mode: any, pattern: exit, operation: exit_or_leave_mode}
+    - {mode: operator, pattern: enable, operation: enter_privileged}
+    - {mode: privileged, pattern: "connect lab-sw1", operation: select_device}
+    - {mode: privileged, pattern: "connect lab-sw2", operation: select_device}
+    - {mode: privileged, pattern: "configure terminal", operation: enter_configuration}
+    - {mode: privileged, pattern: "show interfaces trunk", operation: observe_trunk_summary}
+    - {mode: privileged, pattern: "show interface gi0/1 switchport", operation: observe_switchport}
+    - {mode: privileged, pattern: "show vlan brief", operation: observe_vlan_summary}
+    - {mode: configuration, pattern: "interface gi0/1", operation: select_interface}
+    - {mode: interface, pattern: "switchport mode trunk", operation: set_trunk_mode}
+    - {mode: interface, pattern: "switchport trunk native vlan <vlan_id>", operation: set_native_vlan}
+    - {mode: interface, pattern: "switchport trunk allowed vlan <vlan_list>", operation: replace_allowed_vlans}
+    - {mode: interface, pattern: "switchport trunk allowed vlan add <vlan_list>", operation: add_allowed_vlans}
+    - {mode: interface, pattern: "no switchport trunk native vlan", operation: restore_native_vlan_default}
+    - {mode: [configuration, interface], pattern: end, operation: enter_privileged}
+    - {mode: privileged, pattern: "diagnose native-vlan-mismatch device=<device_id> interface=<interface_id> expected=<vlan_id>", operation: record_native_vlan_diagnosis}
+    - {mode: privileged, pattern: "diagnose allowed-vlan-omission device=<device_id> interface=<interface_id> vlan=<vlan_id>", operation: record_allowed_vlan_diagnosis}
+    - {mode: privileged, pattern: "submit rationale <reason_code_list>", operation: record_rationale_codes}
+    - {mode: privileged, pattern: "submit solution", operation: submit_for_grading}
+  explicitly_forbidden:
+    - shell_escape
+    - pipe
+    - redirect
+    - file_access
+    - subprocess
+    - arbitrary_interface
+    - arbitrary_protocol
+  review_note: >-
+    The "switchport trunk allowed vlan add <vlan_list>" operation
+    (add_allowed_vlans) is a candidate addition beyond the design pack's
+    05-CLI-SIMULATOR.md grammar table, added so followup item
+    22222222-...-000004 and eq-incremental-allowed-vlan are executable.
+    See RC-03.
+
+verification_policy:
+  required_before_change:
+    - {device_id: lab-sw1, operations: [observe_trunk_summary, observe_switchport]}
+    - {device_id: lab-sw2, operations: [observe_trunk_summary, observe_switchport]}
+  required_after_change:
+    - {device_id: lab-sw2, operations: [observe_trunk_summary, observe_switchport]}
+  required_diagnoses: [native-vlan-mismatch, allowed-vlan-omission]
+  required_rationale_codes: [endpoint-agreement, allowed-set-end-to-end]
+
+grading:
+  grader_id: trunk-state-rubric
+  grader_version: "1.0"
+  weights: {final_state: 45, verification: 25, localization_repair: 15, minimality: 10, rationale: 5}
+  critical_invariant_score_cap: 69
+  command_level_hint_facet_cap: 79
+  minimum_cli_mastery_score: 80
+  equivalent_solutions:
+    allow_command_reordering: true
+    allow_reapplying_correct_state: true
+    penalize_unnecessary_changes_under: minimality
+  deterministic_only:
+    - final_state
+    - verification
+    - localization_repair
+    - minimality
+    - rationale
+    - critical_invariant_caps
+
+hints:
+  - {hint_id: syntax-current-mode, kind: syntax, penalty: none, text: "Use `help` to list commands valid in the current mode."}
+  - {hint_id: compare-both-ends, kind: conceptual, marks_facets_assisted: [verification_troubleshooting], evidence_claim_ids: [claim-native-vlan-agreement]}
+  - {hint_id: repair-lab-sw2, kind: command_level, marks_facets_assisted: [cli_configuration, verification_troubleshooting], evidence_claim_ids: [claim-native-vlan-agreement, claim-allowed-vlan-effect]}
+
+feedback_evidence_claim_ids:
+  - claim-trunk-multiple-vlans
+  - claim-dot1q-identifies-vlan
+  - claim-native-vlan-treatment
+  - claim-native-vlan-agreement
+  - claim-allowed-vlan-effect
+  - claim-trunk-verification-state
+
+invalid_command_cases:
+  - case_id: invalid-unknown-command
+    input: "reboot lab-sw2"
+    expected_result: {accepted: false, error_code: unknown_command, state_hash_unchanged: true}
+  - case_id: invalid-wrong-mode
+    input: "switchport mode trunk"
+    context_mode: privileged
+    expected_result: {accepted: false, error_code: invalid_command_for_mode, state_hash_unchanged: true}
+  - case_id: invalid-vlan-out-of-range
+    input: "switchport trunk native vlan 5000"
+    context_mode: interface
+    expected_result: {accepted: false, error_code: vlan_id_out_of_range, state_hash_unchanged: true}
+  - case_id: invalid-shell-metacharacters
+    input: "show interfaces trunk; rm -rf /"
+    context_mode: privileged
+    expected_result: {accepted: false, error_code: unknown_command, state_hash_unchanged: true}
+
+variations:
+  enabled_for_retest: true
+  generator_id: trunk-fault-variant-v1
+  seeds:
+    - {seed_id: reverse-fault-side, parameters: {faulty_device: lab-sw1, required_vlan: 20, intended_native_vlan: 99}}
+    - {seed_id: alternate-required-vlan, parameters: {faulty_device: lab-sw2, required_vlan: 30, intended_native_vlan: 99}}
+  constraints:
+    preserve_tested_concepts: true
+    preserve_rubric_weights: true
+    require_novel_output: true
+    rebuild_cross_field_references: true
+  exclusions:
+    - do_not_change_grammar
+    - do_not_add_protocols
+    - do_not_remove_native_vlan_fault
+    - do_not_reuse_acquisition_seed_for_retention
+
+provenance:
+  implementation_origin: independently_authored
+  output_origin: generated_from_state
+  contains_vendor_binary: false
+  contains_copied_vendor_output: false
+  contains_restricted_vendor_or_course_text: false
+  public_eligibility: pending_scan
+  reviewer_id: alan
+  approved_at: "2026-07-28"

@@ -178,6 +178,73 @@ Freeze the following:
 Expected output: a reviewed fixture commit or immutable fixture tree whose
 manifest hash is cited by every gate report.
 
+### P0 hash and golden sequencing (authoritative)
+
+P0 freezes only what can be computed without gate code:
+
+- canonical **algorithms** (CLI state hash, `image-region-rgb-v1` region hash,
+  normalized-bbox-to-pixel rounding, grounding formula);
+- canonical **schemas** (gate-report schema, Objective Pack / evidence /
+  learner / scenario record shapes);
+- canonical **inputs** (frozen source bytes and their SHA-256, item banks,
+  retrieval cases, scripted learner vectors); and
+- canonical **target specifications** (per-claim scores, per-learner facet
+  targets and outcomes, the executed CLI start/target state hashes).
+
+P0 does **not** invent these, because the code that emits them does not exist
+yet:
+
+- the **index-content hash** is generated and reviewer-accepted at the **WP3**
+  checkpoint (evidence gate runner + `EvidenceIndexSnapshot`);
+- the **event-stream / interrupted-replay hashes** are generated and
+  reviewer-accepted at the **WP6** checkpoint (append-only event repository +
+  `SessionProjector`); and
+- any **gate golden** is written only by the reviewer-only
+  `personal-lms ccna-lab gate accept-goldens` command after the corresponding
+  gate code runs, under `tests/goldens/ccna-mastery/`. A normal `validate` /
+  `gate` / `report` run is read-only with respect to both that accepted-report
+  root and the frozen P0 candidate specifications under
+  `tests/linchpin/expected/`, and can never mint or rewrite either class of
+  artifact.
+
+Until those checkpoints, the affected fields in `fixture-manifest.yaml` and the
+`tests/linchpin/expected/*.json` candidate specifications carry an explicit
+"frozen at WPn" marker, not a fabricated value. Those candidate specifications
+remain part of the exact fixture inventory; `accept-goldens` never writes them.
+
+**Local commit authorization (2026-07-27):** Alan explicitly authorized the one
+local P0 baseline commit of the reviewed fixture tree on branch
+`claude/p0-fixture-freeze`. This authorization is for that single local commit
+only; it does **not** grant push, pull-request, or merge authority.
+
+### P0 scoring arithmetic contract (authoritative)
+
+All facet component means and facet/overall mastery scores are computed with
+exact rational (or full-precision Decimal) arithmetic and **no intermediate
+rounding**. `ROUND_HALF_UP` to two decimals is applied **only** to stored or
+displayed values. A displayed two-decimal facet is an output and is never fed
+back as an input to a later computation.
+
+Worked reference (native-gap scripted learner): the exact facets are
+C=200/3, T=230/3, K=275/3, V=80, X=100, giving overall
+M = 0.15C + 0.20T + 0.30K + 0.25V + 0.10X = 497/6 = 82.8333... → **82.83**.
+Computing M from the displayed 2dp facets would give 82.84 and is disallowed.
+WP4/WP6 graders and the gate reporter must implement this rule exactly so
+reproduced scores match the frozen expected values.
+
+### P0 fixture-extension envelope (authoritative)
+
+The documented domain records (`SourceArtifact`, `EvidenceRegion`, and its
+selectors) are strict (`extra="forbid"`). Test-only metadata that those
+contracts do not define — source `file_size_bytes`, `magic_bytes_hex`, image
+`pixel_dimensions`, and any derived `pixel_box` — must **not** be added as extra
+fields on the strict records. It lives in an explicitly declared
+fixture-extension envelope (`tests/linchpin/schemas/fixture-extensions.schema.json`),
+which is candidate test scaffolding and never a domain record, never sent to a
+provider. A derived image `pixel_box` is recomputed from the selector's
+normalized `bbox` via the frozen round-half-up rule; it is recorded only in the
+review artifact, not in the selector.
+
 ## WP1 — Generic Objective Pack contracts and deterministic loader
 
 Gate: 1
@@ -298,7 +365,7 @@ Expected tests:
 tests/unit/extraction/test_local_fixture.py
 tests/unit/content/test_objective_eligibility.py
 tests/unit/librarian/test_objective_pack_grounding.py
-tests/linchpin/test_source_and_region_resolution.py
+tests/unit/objective_packs/test_source_and_region_resolution.py
 ```
 
 Acceptance evidence:
@@ -362,8 +429,7 @@ Expected tests:
 ```text
 tests/unit/labs/ccna_mastery/test_cli.py
 tests/unit/labs/ccna_mastery/test_gates.py
-tests/linchpin/test_gate_1_evidence.py
-tests/linchpin/test_golden_artifact_guard.py
+tests/unit/labs/ccna_mastery/test_gate1_frozen_fixture.py
 tests/unit/test_cli.py
 ```
 
@@ -456,7 +522,7 @@ Expected tests:
 ```text
 tests/unit/labs/test_protocol.py
 tests/unit/labs/ccna_mastery/test_simulator.py
-tests/linchpin/test_trunk_scenario_equivalence.py
+tests/unit/labs/ccna_mastery/test_trunk_scenario_equivalence.py
 ```
 
 Acceptance evidence:
@@ -513,7 +579,7 @@ tests/unit/study_sessions/test_sqlite.py
 tests/unit/study_sessions/test_replay.py
 tests/unit/study_sessions/test_mastery.py
 tests/unit/study_sessions/test_scheduling.py
-tests/linchpin/test_interrupted_replay.py
+tests/unit/labs/ccna_mastery/test_interrupted_replay.py
 ```
 
 Acceptance evidence:
@@ -587,8 +653,8 @@ Expected paths:
 ```text
 src/personal_lms/study_sessions/runner.py
 src/personal_lms/labs/ccna_mastery/wiring.py
-tests/linchpin/test_gate_2_loop.py
-tests/linchpin/test_scripted_learners.py
+tests/unit/labs/ccna_mastery/test_gate_2_loop.py
+tests/unit/labs/ccna_mastery/test_scripted_learners.py
 ```
 
 Planned symbols:
@@ -680,7 +746,7 @@ tests/unit/provider_qualification/test_sqlite.py
 tests/unit/provider_qualification/test_ollama_inspector.py
 tests/unit/providers/test_projection.py
 tests/unit/policies/test_router.py
-tests/linchpin/test_gate_3_route_isolation.py
+tests/unit/labs/ccna_mastery/test_gate_3_route_isolation.py
 ```
 
 Acceptance evidence:
@@ -705,7 +771,7 @@ Expected changes are limited to fixture/content data and the factory test:
 ```text
 tests/linchpin/packs/objective-1.5-shadow/factory-supplement.yaml
 tests/linchpin/packs/objective-1.5-shadow/
-tests/linchpin/test_gate_3_factory.py
+tests/unit/labs/ccna_mastery/test_gate_3_factory.py
 ```
 
 The immutable Gate 1/2/route manifest does not change. The supplement pins
@@ -738,7 +804,7 @@ Expected paths:
 
 ```text
 src/personal_lms/labs/ccna_mastery/reporting.py
-tests/linchpin/test_gate_decision.py
+tests/unit/labs/ccna_mastery/test_gate_decision.py
 ```
 
 The report must preserve separate statuses for:

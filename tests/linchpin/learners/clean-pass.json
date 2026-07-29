@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "status": "candidate_pending_technical_review",
+  "learner_vector_id": "clean-pass",
+  "objective_ref": "ccna-200-301-v1.1:2.2",
+  "description": "Strong baseline, correct lab, unhinted exit probe.",
+  "baseline_responses": [
+    {"item_id": "11111111-1111-4111-8111-000000000001", "answer": {"selected_option_id": "a"}, "confidence": 5, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000002", "answer": "The tag carries a 12-bit VLAN ID so the receiving switch knows which VLAN the frame belongs to on a trunk carrying several VLANs.", "confidence": 5, "expected_disposition": "graded", "expected_correct": true, "expected_points": 10},
+    {"item_id": "11111111-1111-4111-8111-000000000003", "answer": {"selected_option_id": "a"}, "confidence": 5, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000004", "answer": {"tagged": true, "vlan_id": 10}, "confidence": 4, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000005", "answer": {"tagged": false, "vlan_id": 99}, "confidence": 5, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000006", "answer": {"selected_option_ids": ["a", "b", "d"]}, "confidence": 5, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000007", "answer": {"order": ["s1", "s2", "s3", "s4", "s5", "s6"]}, "confidence": 4, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000008", "answer": {"command": "switchport trunk native vlan 99"}, "confidence": 5, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000009", "answer": {"command": "switchport trunk allowed vlan add 20"}, "confidence": 4, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000010", "answer": {"fault": "native_vlan_mismatch", "revealing_command": "show interfaces trunk"}, "confidence": 5, "expected_disposition": "graded", "expected_correct": true},
+    {"item_id": "11111111-1111-4111-8111-000000000011", "answer": "Run show interfaces trunk on LAB-SW1 and LAB-SW2 and compare the Native and Allowed fields on both ends.", "confidence": 5, "expected_disposition": "graded", "expected_correct": true, "expected_points": 10},
+    {"item_id": "11111111-1111-4111-8111-000000000012", "answer": "The new LAB-SW2-to-LAB-SW3 link most likely has a native VLAN mismatch since LAB-SW3 uses VLAN 1 while LAB-SW2 uses VLAN 99. I would run show interfaces trunk on both ends of that link to confirm the Native fields disagree.", "confidence": 4, "expected_disposition": "graded", "expected_correct": true, "expected_points": 10}
+  ],
+  "expected_evaluator_findings": [],
+  "expected_followup_selection": {"trigger_codes": [], "approved_item_ids": []},
+  "cli_attempt": {
+    "equivalence_case_ref": "eq-separate-commands",
+    "hint_ids_used": [],
+    "expected_final_state_sha256": "6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38",
+    "expected_lab_grade": {"final_state": 45, "verification": 25, "localization_repair": 15, "minimality": 10, "rationale": 5, "total": 100}
+  },
+  "exit_probe_response": {
+    "item_id": "33333333-3333-4333-8333-000000000001",
+    "answer": {
+      "fault": "allowed_vlan_omission",
+      "omitted_vlan": 20,
+      "omitted_on_device": "lab-sw2",
+      "correct_command": "switchport trunk allowed vlan add 20",
+      "verification_command": "show interfaces trunk"
+    },
+    "hint_ids_used": [],
+    "expected_criteria_awarded": ["identifies-fault-and-device", "correct-repair-command", "verification-plan"],
+    "expected_total": 100
+  },
+  "expected_facet_derivation": {
+    "B_C": 100, "B_T": 100, "B_K": 100, "B_V": 100, "B_X": 100,
+    "E_T": 100, "E_V": 100, "E_X": 100,
+    "L_K": 100, "L_V": 100,
+    "C": 100, "T": 100, "K": 100, "V": 100, "X": 100,
+    "overall_M": 100
+  },
+  "expected_outcome": {
+    "progress_phase": "complete",
+    "achievement_status": "acquired",
+    "review_status": "scheduled",
+    "evidence_status": "ready",
+    "required_observations_complete": true,
+    "critical_error": false,
+    "schedule_band": "acquisition_window_days_7_to_14",
+    "reason_codes": ["all_gates_passed_unhinted"]
+  }
+}

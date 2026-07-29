@@ -1,0 +1,46 @@
+{
+  "artifact_kind": "P0_CANDIDATE_SPECIFICATION",
+  "not_a_gate_report": true,
+  "note": "Gate 3 (route isolation and factory scalability) has no implementation yet (WP9-WP10). This file freezes only what P0 can honestly freeze: the allowed provider/profile combinations, and the decision-matrix structure itself. All check statuses are pending_implementation.",
+  "gate_id": "gate-3",
+  "v2_repair_note": "Profile inconsistency resolved: hosted profiles are DISABLED and EXCLUDED from the 48-hour P0 allowlist (see p0_enabled_profiles below). The hosted_opt_in profile is retained only as a disabled future-reference entry, not as a P0-allowed combination.",
+  "p0_enabled_profiles": ["test", "live_local", "smoke_local_ungraded"],
+  "hosted_profiles_disabled": true,
+  "hosted_spend_ceiling_usd": "0.00",
+  "allowed_execution_profile_provider_combinations": [
+    {"profile": "test", "allowed_provider_ids": ["fake-deterministic"], "offline_only": true, "p0_enabled": true},
+    {"profile": "live_local", "allowed_provider_ids": ["ollama-qwen-local"], "offline_only": true, "p0_enabled": true},
+    {"profile": "smoke_local_ungraded", "allowed_provider_ids": ["ollama-qwen-local"], "offline_only": true, "allow_domain_result_writes": false, "p0_enabled": true}
+  ],
+  "hosted_profiles_future_reference_only_disabled": [
+    {"profile": "hosted_opt_in", "allowed_provider_ids": ["ollama-qwen-local", "openai-optional", "gemini-developer-optional", "gemini-vertex-optional"], "offline_only": false, "p0_enabled": false, "review_note": "All hosted providers are enabled:false in config.example.yaml and MUST remain disabled for the 48-hour proof per AD-06 (zero hosted spend). Listed here only for future reference; not a P0-allowed combination."}
+  ],
+  "qwen_identity_policy": "Never hard-code a model tag (e.g. qwen3.5:9b in the example config is provisional). Resolve the actually installed Ollama model at runtime, per AD-05.",
+  "route_isolation": {
+    "status": "pending_implementation",
+    "checks": [
+      {"check_id": "G3-RI-GO-01", "target": "Fake provider is impossible to select in live.", "satisfied_by_current_content": "pending_implementation"},
+      {"check_id": "G3-RI-GO-02", "target": "An absent or expired qualification fails closed in live profiles.", "satisfied_by_current_content": "pending_implementation"},
+      {"check_id": "G3-RI-GO-03", "target": "Provider output cannot change items, grades, achievement, or schedule.", "satisfied_by_current_content": "pending_implementation"},
+      {"check_id": "G3-RI-GO-04", "target": "No provider SDK object enters the domain.", "satisfied_by_current_content": "pending_implementation"},
+      {"check_id": "G3-RI-GO-05", "target": "Provider-specific schema projection is revalidated against the canonical Pydantic model.", "satisfied_by_current_content": "pending_implementation"}
+    ],
+    "qwen_smoke": {"status": "deferred_or_pending", "reason": "Not yet run; deferred only if Ollama is unavailable at Gate 3 time, per G3-RI-QWEN-01."}
+  },
+  "factory_scalability": {
+    "status": "pending_implementation",
+    "checks": [
+      {"check_id": "G3-FS-GO-01", "target": "The second pack requires no Python or domain-schema change.", "satisfied_by_current_content": "not_applicable_yet", "reason": "objective-1.5-shadow pack is intentionally not authored in P0 (see packs/objective-1.5-shadow/README.md)."},
+      {"check_id": "G3-FS-GO-02", "target": "Pack creation after evidence is ready takes at most three focused hours.", "satisfied_by_current_content": "not_applicable_yet"},
+      {"check_id": "G3-FS-GO-03", "target": "The same generic validator and session runner load the second pack.", "satisfied_by_current_content": "not_applicable_yet"},
+      {"check_id": "G3-FS-GO-04", "target": "Missing required evidence produces an honest incomplete/developing result.", "satisfied_by_current_content": "not_applicable_yet"}
+    ]
+  },
+  "decision": {
+    "status": "not_determined",
+    "reason": "Requires Gate 1 and Gate 2 to actually run and pass first; this P0 turn produces candidate input fixtures only, per GLOBAL-01 (a later gate cannot compensate for an earlier failure) applied in reverse -- no gate has run at all yet.",
+    "decision_matrix_reference": "docs/plans/ccna-mastery-micro-lab/LINCHPIN_TRACEABILITY.md#decision-matrix-traceability",
+    "august_1_one_objective_trial": "undetermined",
+    "several_objectives_per_day_scale": "undetermined"
+  }
+}

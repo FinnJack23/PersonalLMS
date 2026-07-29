@@ -1,0 +1,185 @@
+schema_version: "1.0"
+status: p0_content_approved_fixture_authority_pending
+clock_status: not_started
+manifest_id: ccna-objective-2.2-p0-fixture-baseline-v2.1.3-content-approved
+created_by: claude-p0-authorized-landing-turn
+objective_ref: ccna-200-301-v1.1:2.2
+alan_p0_approvals:
+  reviewed_on: "2026-07-27"
+  reviewed_at: null
+  reviewed_at_reason: exact_time_not_captured
+  source: codex_conversation_user_message
+  decisions:
+    fixture_only_0_85_authority: approved_fixture_only_not_production_default
+    technical_content: approved_complete_objective_2_2_packet_2026_07_28
+    narrow_pdf_image_dependency_extra: approved_ccna_lab_extra
+    reviewer_only_golden_acceptance: approved_alan_initial_reviewer
+    isolated_worktree_integration: approved
+    plan_amendment: approved_applied_to_implementation_plan
+    one_local_commit: approved_no_push_pr_merge
+  rc06_human_visual_review: approved_quote_I_approve_both_regions
+review_note: >
+  v2.1.3 CONTENT APPROVAL COMPLETION. Alan approved the complete pending-content
+  packet on 2026-07-28: all seven PDF regions, the remaining eight baseline
+  items, all six follow-ups, the exit probe, and the complete CLI scenario with
+  its explicit Gate 2 production-engine limitation. The prior approvals for six
+  claims, baseline items 1/4/10/12, and both infographic regions remain intact.
+  This manifest is still not a golden, fixture authority is recorded separately,
+  and clock_status remains not_started. PDF/PNG source bytes, arithmetic,
+  fixture extensions, retrieval cases, and CLI state hashes are unchanged.
+
+# ---------------------------------------------------------------------
+# Normative arithmetic contract (v2.1)
+# ---------------------------------------------------------------------
+arithmetic_contract:
+  computation: exact_rational_or_decimal_no_intermediate_rounding
+  rounding_mode: ROUND_HALF_UP
+  rounding_scale_decimals: 2
+  rounding_applies_to: stored_or_displayed_values_only
+  inputs_rule: displayed_rounded_facets_are_outputs_never_recomputation_inputs
+  verification: >-
+    Verified with Python Fraction for all four learners: clean-pass M=100,
+    native-gap M=497/6=82.8333...->82.83, ambiguous BLOCKED (no numeric M),
+    injection M=100 (== clean-pass). Recomputing native-gap M from the
+    displayed 2dp facets yields 82.84 and is explicitly disallowed.
+
+# ---------------------------------------------------------------------
+# Strict-record compatibility (v2.1)
+# ---------------------------------------------------------------------
+strict_record_compatibility:
+  source_artifact_records: documented_fields_only
+  evidence_region_selectors: documented_fields_only_pixel_box_removed
+  fixture_extension_envelope: schemas/fixture-extensions.schema.json
+  fixture_extension_fields: [file_size_bytes, magic_bytes_hex, pixel_dimensions]
+  rc06_human_approval:
+    regions: [evid-infographic-native-region, evid-infographic-allowed-region]
+    reviewer_status: approved
+    human_reviewer_id: alan
+    human_decision: approved
+    human_approval_quote: "I approve both regions"
+    human_approval_source: codex_conversation_user_message
+    human_reviewed_on: "2026-07-27"
+    human_reviewed_at: null
+    human_reviewed_at_reason: exact_time_not_captured
+    distinct_from_ai_review: true
+    scope_note: approval_only_no_wording_contrast_or_description_assertions_by_human
+    image_bytes_unchanged: true
+
+# ---------------------------------------------------------------------
+# G1-FX-06: exact tree + canonically sorted path/hash inventory
+# (excludes this manifest, which carries its own manifest_self_sha256).
+# ---------------------------------------------------------------------
+fixture_path_hash_inventory:
+  - {path: "expected/event-and-state-hashes.json", sha256: 5b9540da32084ec9853a2284c0dd509633c9957a6f951028d30ae5bee864dcf9}
+  - {path: "expected/evidence-report.json", sha256: dd849d65e9328275122d42b10408d7e79d2843d670101972b66fc0987f77cc31}
+  - {path: "expected/loop-results.json", sha256: 3ba44bc011d2e881de74427c1014a4a54544e71259b522c0c239129e81578ace}
+  - {path: "expected/route-and-factory-report.json", sha256: f9c0b2e8deec92291f30b5636dfb5780c12d7a328e3815b96fa12db11afa5e77}
+  - {path: "learners/ambiguous.json", sha256: eaeb2d34601cd6401eb7670e885ac587e89e648056bc189648ccde274f2d8616}
+  - {path: "learners/clean-pass.json", sha256: d154aa7acd9c94f5ca4d9821c46adc09b206da83aaa6c278ab3af69d243a4283}
+  - {path: "learners/injection.json", sha256: 6763de315da6f9863ec170112fbd192c884c4336fccce31a5b5a769d6669eb0b}
+  - {path: "learners/native-gap.json", sha256: e517393de7672b2e207db3003635a024a85d6c5192c535a3d8c07e3f1c001208}
+  - {path: "packs/objective-1.5-shadow/README.md", sha256: 34c858561fc66a77e6c85969fca4e90edd02d827b214ed49df8621f0e91f4237}
+  - {path: "packs/objective-2.2/baseline-items.yaml", sha256: c762d75e65a649df70887fbaca821805b77de2576e68997b1c52f695b163a01f}
+  - {path: "packs/objective-2.2/claims.yaml", sha256: 3ecabdf00292ffa3d5809fb149f299cb7bb44bc3e1904cc0e373e9367c037eb5}
+  - {path: "packs/objective-2.2/exit-probe-items.yaml", sha256: 572478e48ae40abe6ea0262efc60fffc4d2ed9639aa3a143a8107eb8c0bf4f34}
+  - {path: "packs/objective-2.2/followup-items.yaml", sha256: 563b07e770751ac65a8da3d953b362d3e434fd6db15f57f766aae221d421508e}
+  - {path: "packs/objective-2.2/scenario-trunk-native-vlan-mismatch.yaml", sha256: 960f4639574db6c5398405db2b1f346883ea9e0ada80ec0438fc41a336e85c4f}
+  - {path: "queries/retrieval-cases.json", sha256: 58a9e2880e5801cc5fbddded0c576aa200e956dd702b6c9ad3d6147e93c66df8}
+  - {path: "schemas/fixture-extensions.schema.json", sha256: 6fea7b2734193195cc9306619c2744b08288a69a68534c1b077e52b4f148a060}
+  - {path: "schemas/gate-report.schema.json", sha256: d0b85ae37ee0f875e3a8356b2be42e8b9d62d05fd0bdfccad2e1400c7bf382cf}
+  - {path: "sources/ai-visual-review.yaml", sha256: cd10ee93023703e5c7f4ddb7dd981f3b6c898e405364aed44be8218001db03e7}
+  - {path: "sources/objective-2.2-infographic.png", sha256: c8355b3514fa3c2aa48c87e48c3945a19fdf886423b5c902db968ee0351805cd}
+  - {path: "sources/objective-2.2-synthetic.pdf", sha256: 9ac8bca34e76df94fa93509c1ecf1f42ae8792e4502c381a79493b9d166adcd6}
+  - {path: "sources/source-registrations.yaml", sha256: ac72fa7f11f5858b2400796924c8b02e2d55abe5ee7eaf4341316bf7b6dad246}
+  - {path: "sources/wrong-blueprint-source.pdf", sha256: 91aab28a829d3b362e2d95e8817f4dc56a0c74faab10428f8459b92082cf7f41}
+inventory_hash_method: "sha256 of raw file bytes, sha256sum(1) equivalent, no normalization."
+
+# ---------------------------------------------------------------------
+# Retrieval case pins (G1-FX-05)
+# ---------------------------------------------------------------------
+retrieval_cases:
+  supported_case_ids: [rc-01, rc-02, rc-03, rc-04, rc-05, rc-06, rc-07, rc-08, rc-09, rc-10]
+  unsupported_case_ids: [rc-11, rc-12]
+  source_file: queries/retrieval-cases.json
+
+# ---------------------------------------------------------------------
+# Versions (G1-FX-07)
+# ---------------------------------------------------------------------
+versions:
+  objective_version: ccna-200-301-v1.1:2.2
+  item_bank_version: 1
+  claim_set_version: 1
+  scenario_version: "1.0.0"
+  mastery_policy_version: ccna-objective-v1
+  grounding_calculation_policy_version: ccna-grounding-v1
+  schedule_policy_version: transparent-intervals-v1
+  gate_schema_version: "1.0"
+
+# ---------------------------------------------------------------------
+# Scripted response vectors (G1-FX-07)
+# ---------------------------------------------------------------------
+scripted_learners:
+  - {learner_vector_id: clean-pass, file: learners/clean-pass.json, expected_achievement_status: acquired, expected_review_status: scheduled, expected_evidence_status: ready, expected_overall_M: "100.00"}
+  - {learner_vector_id: native-gap, file: learners/native-gap.json, expected_achievement_status: none, expected_review_status: scheduled, expected_evidence_status: ready, expected_overall_M: "82.83"}
+  - {learner_vector_id: ambiguous, file: learners/ambiguous.json, expected_achievement_status: none, expected_review_status: none, expected_evidence_status: review_required, expected_overall_M: null}
+  - {learner_vector_id: injection, file: learners/injection.json, expected_achievement_status: acquired, expected_review_status: scheduled, expected_evidence_status: ready, expected_overall_M: "100.00", must_equal: clean-pass}
+
+# ---------------------------------------------------------------------
+# Allowed execution-profile / provider / task combinations (P0 scope).
+# Hosted profiles are DISABLED and EXCLUDED (AD-06, zero hosted spend).
+# ---------------------------------------------------------------------
+allowed_profile_provider_combinations:
+  - {profile: test, provider_ids: [fake-deterministic], offline_only: true}
+  - {profile: live_local, provider_ids: [ollama-qwen-local], offline_only: true}
+  - {profile: smoke_local_ungraded, provider_ids: [ollama-qwen-local], offline_only: true, allow_domain_result_writes: false}
+hosted_profiles_enabled_for_this_freeze: []
+hosted_spend_ceiling_usd: "0.00"
+
+# ---------------------------------------------------------------------
+# Canonicalization and hash rules
+# ---------------------------------------------------------------------
+canonicalization_rules:
+  file_hash: "sha256 over raw file bytes."
+  evidence_region_text_content_sha256: "sha256(exact_text.encode('utf-8')) for page_text regions."
+  evidence_region_image_content_sha256: "sha256(b'image-region-rgb-v1\\x00' + width_u32_be + height_u32_be + crop.convert('RGB').tobytes()), crop = image.crop(pixel_box). pixel_box is DERIVED from the selector.bbox via normalized_bbox_to_pixel; it is no longer stored in the selector (v2.1 strict-compat). The derived box is recorded only in sources/ai-visual-review.yaml."
+  normalized_bbox_to_pixel: "Per-edge round-half-up: floor(norm*dim + 0.5), clamped to [0,dim]; box=(left,top,right,bottom), right>left, bottom>top."
+  image_hash_vs_content_sha256: "selector.image_hash = sha256 of the whole source PNG bytes; region content_sha256 = the image-region-rgb-v1 hash above. They are separate values."
+  cli_state_hash: "sha256(json.dumps(canonical_payload, sort_keys=True, separators=(',',':')).encode('utf-8')); canonical_payload = {command_mode, current_device, devices:{device_id:{vlans:sorted, interfaces:{interface_id:{admin_up,oper_up,switchport_mode,tagging,native_vlan,allowed_vlans:sorted}}}}}; no timestamps/display text/event IDs. EXECUTED: start=1a690fc8..., target=6a7d2785..."
+  index_content_hash: "ALGORITHM FROZEN AT WP3, NOT NOW. See plan-amendment (RC-04): P0 freezes inputs/schema; the actual index hash is generated and reviewer-accepted at the WP3 checkpoint. No value is fabricated here."
+  event_stream_hash: "ALGORITHM FROZEN AT WP6, NOT NOW. See plan-amendment (RC-05): P0 freezes the canonical event model; the actual event-stream hash is generated and reviewer-accepted at the WP6 checkpoint. No value is fabricated here."
+
+# ---------------------------------------------------------------------
+# Focused-time ledger contract (AD-08 default, pending Alan confirmation)
+# ---------------------------------------------------------------------
+focused_time_ledger_contract:
+  method: signed_human_start_stop_entries
+  tied_to: [manifest_self_sha256, gate_start_hash]
+  gate_1_manual_cleanup_ceiling_hours: 4
+  gate_3_factory_ceiling_hours: 3
+  entries: []
+
+# ---------------------------------------------------------------------
+# Reviewer-only golden-acceptance contract (RC-07, still open; P0-07 scope)
+# ---------------------------------------------------------------------
+golden_acceptance_contract:
+  command: "personal-lms ccna-lab gate accept-goldens"
+  status: implementation_complete_acceptance_pending_passing_report
+  authority: reviewer_only
+  normal_gate_runs: read_only_with_respect_to_expected
+  reviewer_identity: alan
+  reviewer_role: initial_reviewer
+  local_baseline_commit: authorized_2026-07-27_one_local_commit_no_push_pr_merge
+
+# ---------------------------------------------------------------------
+# Extraction decision reference (P0-06)
+# ---------------------------------------------------------------------
+extraction_decision_reference: >-
+  pdfminer.six (PDF text) + Pillow (PNG structure/regions) are declared in the
+  narrow ccna-lab optional dependency group and exercised against the exact
+  frozen source bytes. Core installation remains free of those dependencies.
+
+# ---------------------------------------------------------------------
+# Self-hash: sha256 over this file with the value on the line below
+# replaced by the literal token PENDING_COMPUTED_BELOW.
+# ---------------------------------------------------------------------
+manifest_self_sha256: 3798e2181eccf666c27df267df0c784460be1615e9229ae101644ff0333997a3

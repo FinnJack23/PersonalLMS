@@ -373,6 +373,70 @@ Alan must confirm whether this compatibility pattern satisfies ADR-0001 or
 whether a thin CrewAI wrapper is required. The answer is a prerequisite to
 Gate 2, not a reason to put CrewAI into Gate 1.
 
+## AD-08 approved external focused-work evidence contract
+
+**Status:** Approved by Alan on 2026-07-28. This decision supersedes the
+earlier recommended default that placed signed entries in the frozen fixture
+manifest.
+
+The authoritative fixture-ready baseline for the first prospective attempt is:
+
+```text
+3798e2181eccf666c27df267df0c784460be1615e9229ae101644ff0333997a3
+```
+
+Focused-work evidence is stored in a trusted local append-only authority
+(sidecar or SQLite), outside the frozen fixture bytes. The empty legacy
+`focused_time_ledger_contract.entries` fixture field is not evidence and no
+nonempty embedded-entry compatibility path is permitted. This removes the
+impossible dependency in which an entry inside a self-hashed manifest would
+have to contain that same final manifest hash.
+
+The trusted Gate 1 constants are `gate_id = "gate-1"`,
+`gate_definition_version = "1.0"`, and the sole authorized work item
+`manual-cleanup`. The exact authorized work-item set is canonically hashed
+with the gate ID and definition version before the attempt starts.
+
+Before any measured work, the authority must persist one immutable
+`GateStartRecord` containing its schema, unique attempt/run ID, fixture-ready
+SHA-256, Gate 1 ID and definition version, exact authorized-scope SHA-256, UTC
+start instant, start code revision, and explicit human signer attestation. The
+gate-start hash is the canonical SHA-256 of that complete persisted record. It
+therefore changes with the attempt ID, start instant, revision, scope, fixture,
+definition, or attestation; it is not derived from final mutable worktree
+state.
+
+Every external focused-work entry has a unique immutable ID and binds to the
+attempt ID, fixture-ready hash, gate-start hash, gate definition, and scope
+hash. Its authorized work-item ID, exact UTC start/stop instants, description,
+and human attestation are required. Entries must start strictly after the
+approved gate start and stop no later than the signed closure. Zero or negative
+intervals are invalid.
+
+The final external closure is a signed completeness attestation bound to the
+same attempt, fixture, start, definition, and scope. It records the UTC closure
+instant, literal `complete = true`, exact entry count, canonical entry-set hash,
+and exact total focused person-time. A partial envelope, an absent closure, or
+any count/hash/total mismatch fails closed. Absence of an external envelope, or
+a valid complete envelope with no entries, remains `NOT_RUN`; silence never
+proves zero cleanup time.
+
+Signer IDs are accepted only when the caller obtained the records from the
+trusted external authority and the IDs appear in its configured authorization
+set. The ID fields are explicit human attestations, not cryptographic signature
+verification and not a self-authorizing claim made by an arbitrary envelope.
+
+Focused time is exact integer microseconds of **person-time**. Intervals for the
+same signer may not overlap. Concurrent intervals from distinct authorized
+signers are valid and both count; they are not merged into wall-clock time. The
+Gate 1 ceiling is inclusive at exactly four hours and exceeded by even one
+additional microsecond.
+
+This approval is prospective only. Existing repair work and prior gate reports
+must not be backfilled or reconstructed as focused-time evidence. The first
+eligible measurement begins only after a fresh compliant start record is
+persisted; all earlier evidence remains `NOT_RUN` for G1-NG-05.
+
 ## Decisions requiring Alan
 
 | ID | Decision | Recommended default | Effect if unresolved |
@@ -384,7 +448,7 @@ Gate 2, not a reason to put CrewAI into Gate 1.
 | AD-05 | Qwen identity for later live-local qualification | Resolve the actually installed model at runtime; never hard-code `qwen3.5:9b` or current test examples. | Qwen smoke may defer; core static gate still runs. |
 | AD-06 | Hosted-model budget scope | Keep the 48-hour proof at zero hosted spend; design a spend ledger before any hosted live route. | Hosted route remains ineligible, which is safe. |
 | AD-07 | Gate 3 report when route passes and factory fails | Preserve subgate statuses; one-objective trial may pass while scaling fails. | A single “overall” status would misstate the decision. |
-| AD-08 | Definition and recording of “focused hours” | Human start/stop ledger tied to fixture-ready and gate-start hashes. | Manual-cleanup and factory-time criteria cannot be audited. |
+| AD-08 | Definition and recording of “focused hours” | **Approved 2026-07-28:** prospective external append-only human attestations tied to the `3798e2…97a3` fixture-ready baseline, unique attempt, complete start-record hash, exact scope, and signed closure; no backfill. | Resolved for G1-NG-05 by the approved contract above. |
 | AD-09 | Shared SQLite direction after proof | Namespaced migrations or one coordinated migrator; do not co-locate current stores unchanged. | One-week persistence hardening is blocked, not Gate 1. |
 | AD-10 | A2A/CML portability checkpoint | After local gates and a second deployed consumer, run a contract-mapping spike with no core-domain changes and full external-boundary controls. | Portability remains untested, but the August 1 proof is unaffected. |
 | AD-11 | May implementation agents create local feature-branch commits, or must handoff use only a canonical diff hash? | Alan chooses one integration authority before coding; push and PR remain prohibited. | Handoff/integration provenance is ambiguous. |
