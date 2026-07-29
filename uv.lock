@@ -2180,6 +2180,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+ccna-lab = [
+    { name = "pdfminer-six" },
+    { name = "pillow" },
+    { name = "pyyaml" },
+]
 crewai = [
     { name = "crewai" },
 ]
@@ -2202,9 +2207,12 @@ requires-dist = [
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15.2,<1.16" },
     { name = "httpx", marker = "extra == 'ollama'", specifier = ">=0.27,<1" },
     { name = "httpx", marker = "extra == 'openai-live'", specifier = ">=0.27,<1" },
+    { name = "pdfminer-six", marker = "extra == 'ccna-lab'", specifier = ">=20260107,<20270101" },
+    { name = "pillow", marker = "extra == 'ccna-lab'", specifier = ">=12.3,<13" },
     { name = "pydantic", specifier = ">=2,<3" },
+    { name = "pyyaml", marker = "extra == 'ccna-lab'", specifier = ">=6.0.3,<7" },
 ]
-provides-extras = ["crewai", "ollama", "openai-live"]
+provides-extras = ["crewai", "ollama", "openai-live", "ccna-lab"]
 
 [package.metadata.requires-dev]
 dev = [

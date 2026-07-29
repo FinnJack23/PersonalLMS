@@ -17,7 +17,13 @@ from personal_lms.cli import build_parser, main
 from personal_lms.domain.objective_packs import QuarantineStatus, ReviewState, TrustStatus
 from personal_lms.evidence_review.service import EvidenceReviewService
 from personal_lms.evidence_review.sqlite import SQLiteEvidenceReviewRepository
-from personal_lms.labs.ccna_mastery.gates import GateCheckStatus, GateId, GateStatus
+from personal_lms.labs.ccna_mastery.gates import (
+    GateCheckStatus,
+    GateId,
+    GateStatus,
+    provenance_path_for_primary,
+)
+from personal_lms.labs.ccna_mastery.report_schema import report_from_bound_provenance
 from personal_lms.labs.ccna_mastery.wiring import build_ccna_mastery_use_case
 from personal_lms.objective_packs.loader import ObjectivePackLoader, PackFileReader
 
@@ -293,11 +299,16 @@ class TestGateEvidenceCommand:
             ]
         )
 
-        payload = json.loads((directory / "gate-1.json").read_text(encoding="utf-8"))
+        primary_path = directory / "gate-1.json"
+        payload = json.loads(primary_path.read_text(encoding="utf-8"))
+        report = report_from_bound_provenance(
+            primary_bytes=primary_path.read_bytes(),
+            provenance_bytes=provenance_path_for_primary(primary_path).read_bytes(),
+        )
 
         assert payload["code_revision"]
         assert payload["code_revision"] != "unversioned"
-        assert payload["definition_version"]
+        assert report.definition.definition_version
 
 
 class TestEvidenceApproveRegionCommand:

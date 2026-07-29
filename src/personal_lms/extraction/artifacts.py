@@ -43,16 +43,24 @@ from personal_lms.domain.objective_packs import ImageRegionSelector
 
 __all__ = [
     "DEFAULT_EXTRACTION_LIMITS",
+    "IMAGE_REGION_HASH_SCHEME",
     "SUPPORTED_MEDIA_TYPES",
+    "DecodedImage",
     "ExtractionLimits",
     "ExtractionOutcome",
     "ImageDimensions",
     "PdfTextExtractor",
+    "PngPixelDecoder",
     "SourceArtifactExtractionResult",
     "SourceArtifactExtractor",
     "detect_media_type",
+    "image_region_content_sha256",
     "inspect_png_dimensions",
+    "locate_passage",
+    "normalize_extracted_text",
+    "normalized_bbox_to_pixel_box",
     "region_fits_image",
+    "same_extracted_text",
     "verify_source_bytes",
 ]
 
@@ -142,6 +150,22 @@ class SourceArtifactExtractionResult(StrictModel):
     image_width: int | None = Field(default=None, gt=0)
     image_height: int | None = Field(default=None, gt=0)
     text: str | None = None
+    region_content_sha256: str | None = Field(
+        default=None,
+        min_length=64,
+        max_length=64,
+        description=(
+            "For an image region: the image-region-rgb-v1 hash of the decoded crop. "
+            "Populated only when pixels were actually materialized."
+        ),
+    )
+    pixel_box: tuple[int, int, int, int] | None = Field(
+        default=None,
+        description=(
+            "Derived review metadata: the selector's normalized box converted to this "
+            "image's pixel grid. Never written back onto a selector."
+        ),
+    )
     detail: str | None = Field(default=None, min_length=1)
 
     @property
@@ -391,6 +415,36 @@ _SAMPLES_PER_PIXEL: dict[int, int] = {
 }
 
 
+def normalized_bbox_to_pixel_box(
+    selector: ImageRegionSelector, dimensions: ImageDimensions
+) -> tuple[int, int, int, int]:
+    """The frozen normalized-bbox-to-pixel conversion, per edge.
+
+    ``pixel = floor(normalized * dimension + 0.5)``, clamped to
+    ``[0, dimension]`` — round-half-up on each edge independently, which
+    is the rule the fixture manifest pins and the rule the region content
+    hash was generated under. Implemented in exact integer arithmetic
+    (``(bp * dim + 5000) // 10000``) rather than with floats, so the
+    boundary case where ``normalized * dimension`` lands exactly on ``.5``
+    rounds up deterministically on every platform instead of following
+    whatever the binary representation happened to be.
+
+    A derived pixel box is review metadata. It is never written back onto
+    the selector — see the fixture-extension envelope in the P0 plan
+    amendment.
+    """
+
+    def edge(basis_points: int, dimension: int) -> int:
+        return max(0, min(dimension, (basis_points * dimension + 5_000) // 10_000))
+
+    return (
+        edge(selector.left_basis_points, dimensions.width),
+        edge(selector.top_basis_points, dimensions.height),
+        edge(selector.right_basis_points, dimensions.width),
+        edge(selector.bottom_basis_points, dimensions.height),
+    )
+
+
 def region_fits_image(selector: ImageRegionSelector, dimensions: ImageDimensions) -> bool:
     """Whether a normalized region resolves to at least one pixel.
 
@@ -400,8 +454,147 @@ def region_fits_image(selector: ImageRegionSelector, dimensions: ImageDimensions
     pixel of a small image collapses to nothing and cannot be a real
     region.
     """
-    left = selector.left_basis_points * dimensions.width // 10_000
-    right = selector.right_basis_points * dimensions.width // 10_000
-    top = selector.top_basis_points * dimensions.height // 10_000
-    bottom = selector.bottom_basis_points * dimensions.height // 10_000
+    left, top, right, bottom = normalized_bbox_to_pixel_box(selector, dimensions)
     return right > left and bottom > top
+
+
+#: Scheme tag for the image-region content hash, matching the frozen
+#: fixture's ``canonicalization_rules.evidence_region_image_content_sha256``.
+IMAGE_REGION_HASH_SCHEME = b"image-region-rgb-v1\x00"
+
+
+def image_region_content_sha256(*, width: int, height: int, rgb_bytes: bytes) -> str:
+    """The canonical hash of one decoded image region's pixels.
+
+    ``sha256(scheme || width_u32_be || height_u32_be || rgb)`` over the
+    crop's *decoded* RGB samples. Because it covers real pixels rather
+    than file bytes, it cannot be satisfied by a structurally plausible
+    stub: a header-only pseudo-image has no samples to hash.
+    """
+    digest = hashlib.sha256()
+    digest.update(IMAGE_REGION_HASH_SCHEME)
+    digest.update(struct.pack(">I", width))
+    digest.update(struct.pack(">I", height))
+    digest.update(rgb_bytes)
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class DecodedImage:
+    """One fully decoded raster image: dimensions plus its RGB samples."""
+
+    width: int
+    height: int
+    format_name: str
+    rgb_bytes: bytes
+
+    @property
+    def dimensions(self) -> ImageDimensions:
+        return ImageDimensions(width=self.width, height=self.height)
+
+
+@runtime_checkable
+class PngPixelDecoder(Protocol):
+    """Injected seam for a full-pixel PNG decode.
+
+    Structural checks in this module read headers and verify chunk
+    integrity without decoding; they cannot prove an image *renders*.
+    An implementation of this protocol must actually materialize samples,
+    so a file that merely looks like a PNG fails here rather than being
+    handed to a human as something to review.
+
+    Must be pure with respect to its input: no network access, no
+    subprocess, no ambient configuration.
+    """
+
+    @property
+    def decoder_id(self) -> str: ...
+
+    @property
+    def decoder_version(self) -> str: ...
+
+    def decode_region(
+        self, payload: bytes, *, box: tuple[int, int, int, int] | None = None
+    ) -> DecodedImage:
+        """Decode ``payload``, optionally cropped to ``box``.
+
+        Raises ``ValueError`` for bytes that are not a decodable PNG or a
+        box the image cannot contain — never a partial or guessed result.
+        """
+        ...
+
+
+# Whitespace normalization is deliberately the *only* transformation
+# applied before comparing extracted text with a reviewed passage, and it
+# is deliberately the weakest one that works. A PDF's text layer breaks
+# lines and pads columns wherever the layout engine chose to; those are
+# properties of the rendering, not of the content.
+#
+# The rule: split on Unicode whitespace and rejoin with single spaces.
+# Its guarantee is that the *sequence of whitespace-delimited tokens is
+# preserved exactly*. Two strings compare equal iff they have identical
+# tokens in identical order. Nothing merges tokens (runs collapse to one
+# space, never to nothing) and nothing splits them, so a difference in a
+# command, a VLAN ID, an interface name, a number, a negation, or any
+# other answer-bearing token is structurally impossible to hide. What it
+# *does* discard is line breaks and column padding, and only those.
+#
+# Stripping whitespace entirely was rejected: it would make "VLAN 99" and
+# "VLAN99" compare equal, which is exactly the class of difference this
+# comparison exists to catch.
+
+
+def normalize_extracted_text(text: str) -> str:
+    """Whitespace-normalized form: tokens preserved, layout discarded."""
+    return " ".join(text.split())
+
+
+def same_extracted_text(left: str, right: str) -> bool:
+    """Whether two strings carry the identical token sequence."""
+    return normalize_extracted_text(left) == normalize_extracted_text(right)
+
+
+def locate_passage(page_text: str, passage: str) -> tuple[int, int] | None:
+    """Character offsets of ``passage`` inside ``page_text``, or ``None``.
+
+    Matching is on the token sequence, so a passage that the PDF wrapped
+    across lines still resolves, while a passage whose tokens differ in
+    any way does not. The returned offsets bound the *real* extracted
+    text: from the first character of the first matching token to the last
+    character of the last one. Callers slice ``page_text`` with them, which
+    is what keeps the resolved content byte-derived rather than a copy of
+    the passage that was searched for.
+
+    Returns ``None`` when there is no match **and** when there is more than
+    one: an ambiguous passage does not identify a region, and picking the
+    first occurrence would silently choose for the reviewer.
+    """
+    haystack = _tokens_with_offsets(page_text)
+    needle = passage.split()
+    if not needle or len(needle) > len(haystack):
+        return None
+
+    matches: list[tuple[int, int]] = []
+    haystack_tokens = [token for token, _, _ in haystack]
+    for start in range(len(haystack) - len(needle) + 1):
+        if haystack_tokens[start : start + len(needle)] == needle:
+            matches.append((haystack[start][1], haystack[start + len(needle) - 1][2]))
+            if len(matches) > 1:
+                return None
+    return matches[0] if matches else None
+
+
+def _tokens_with_offsets(text: str) -> list[tuple[str, int, int]]:
+    """Every whitespace-delimited token with its half-open character range."""
+    tokens: list[tuple[str, int, int]] = []
+    start: int | None = None
+    for index, character in enumerate(text):
+        if character.isspace():
+            if start is not None:
+                tokens.append((text[start:index], start, index))
+                start = None
+        elif start is None:
+            start = index
+    if start is not None:
+        tokens.append((text[start:], start, len(text)))
+    return tokens

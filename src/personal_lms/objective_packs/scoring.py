@@ -47,6 +47,7 @@ from personal_lms.domain.objective_packs import ApprovedClaim, ClaimSupport
 
 __all__ = [
     "BASIS_POINTS",
+    "CLAIM_SCORE_ALGORITHM_PROVENANCE",
     "CLAIM_SCORE_POLICY_VERSION",
     "GROUP_WEIGHTS_PER_TEN_THOUSAND",
     "ClaimGroundingResult",
@@ -56,10 +57,31 @@ __all__ = [
 #: One whole unit, expressed in basis points.
 BASIS_POINTS = 10_000
 
-#: Version of the formula below. Recorded on every result and every
-#: validation report, so a score computed under a different formula is
-#: never silently compared with one computed under this one.
-CLAIM_SCORE_POLICY_VERSION = "design-03-ingestion-rag-evidence-1.0"
+#: **The public calculation-policy identifier.** This is the name a pack's
+#: ``ClaimSupport.calculation_policy_version`` must carry, the value
+#: recorded on every result and validation report, and the string a gate
+#: comparison keys on. Two scores are comparable exactly when they share
+#: it.
+#:
+#: It is deliberately *not* the name of the design document below. A
+#: policy identifier answers "which agreed scoring contract were these
+#: factors judged under?"; the specification reference answers "where is
+#: that contract written down?". Conflating them made a reviewed fixture
+#: — which correctly declares the public contract — appear to disagree
+#: with an implementation that was faithfully implementing it.
+CLAIM_SCORE_POLICY_VERSION = "ccna-grounding-v1"
+
+#: **Where the arithmetic is specified.** Provenance, never an identity: a
+#: pack declaring this string as its ``calculation_policy_version`` is
+#: still a mismatch, because it is not the public contract name. Recorded
+#: alongside every result so a reader can find the specification without
+#: being able to mistake it for the policy identifier.
+#:
+#: There is deliberately no alias table. A name this module does not
+#: recognise as the public identifier fails closed, exactly as an unknown
+#: policy always has — accepting a set of "equivalent" names is how two
+#: genuinely different formulas end up compared as though they were one.
+CLAIM_SCORE_ALGORITHM_PROVENANCE = "design-03-ingestion-rag-evidence-1.0"
 
 #: Diminishing-return weights for the strongest three independent groups,
 #: as ten-thousandths: 1.0, 0.15, 0.05 from the design's aggregation rule.
@@ -93,6 +115,13 @@ class ClaimGroundingResult:
     claim_id: str
     score_basis_points: int
     calculation_policy_version: str
+    # kw_only so this field cannot shift the position of every field after
+    # it. It was inserted between calculation_policy_version and
+    # contributing_groups, and a positional caller built against the
+    # earlier eight-field signature would otherwise silently bind its
+    # contributing_groups tuple to this str parameter instead — a type
+    # mismatch that dataclasses do not check at runtime.
+    algorithm_provenance: str = field(default=CLAIM_SCORE_ALGORITHM_PROVENANCE, kw_only=True)
     contributing_groups: tuple[str, ...] = ()
     group_scores: tuple[int, ...] = ()
     blocked: bool = False
@@ -121,8 +150,13 @@ class ClaimEvidencePolicy:
         self,
         *,
         policy_version: str = CLAIM_SCORE_POLICY_VERSION,
+        algorithm_provenance: str = CLAIM_SCORE_ALGORITHM_PROVENANCE,
         minor_conflict_penalty_basis_points: int = 0,
     ) -> None:
+        if not policy_version:
+            raise ValueError("policy_version must be a nonempty calculation-policy identifier")
+        if not algorithm_provenance:
+            raise ValueError("algorithm_provenance must be a nonempty specification reference")
         if not 0 <= minor_conflict_penalty_basis_points <= BASIS_POINTS:
             raise ValueError("minor conflict penalty must be 0..10000 basis points")
         if minor_conflict_penalty_basis_points and policy_version == CLAIM_SCORE_POLICY_VERSION:
@@ -131,12 +165,30 @@ class ClaimEvidencePolicy:
                 "requires its own policy_version; reusing the baseline version would "
                 "make two different formulas indistinguishable in a gate report"
             )
+        confused_with_provenance = policy_version in (
+            CLAIM_SCORE_ALGORITHM_PROVENANCE,
+            algorithm_provenance,
+        )
+        if confused_with_provenance:
+            raise ValueError(
+                "the specification reference is provenance, not a policy identifier; "
+                "a policy_version equal to the known default provenance or to this "
+                "policy's own supplied algorithm_provenance would let a document name "
+                "stand in for the agreed scoring contract"
+            )
         self._policy_version = policy_version
+        self._algorithm_provenance = algorithm_provenance
         self._minor_penalty = minor_conflict_penalty_basis_points
 
     @property
     def policy_version(self) -> str:
+        """The public calculation-policy identifier a pack must declare."""
         return self._policy_version
+
+    @property
+    def algorithm_provenance(self) -> str:
+        """Where this formula is specified. Never used for comparison."""
+        return self._algorithm_provenance
 
     @property
     def minor_conflict_penalty_basis_points(self) -> int:
@@ -245,6 +297,7 @@ class ClaimEvidencePolicy:
             claim_id=claim.claim_id,
             score_basis_points=score,
             calculation_policy_version=self._policy_version,
+            algorithm_provenance=self._algorithm_provenance,
             contributing_groups=tuple(group for group, _ in contributing),
             group_scores=tuple(product // _EDGE_DENOMINATOR for _, product in contributing),
             blocked=blocked,

@@ -7,8 +7,8 @@ Three ideas carry the whole module:
    a passing report that contains a failing required check, so "the gate
    passed" always means the same thing.
 
-2. **Observed output and approved expectations are different trees.**
-   Approved goldens live under a reviewed expected/ directory and are
+2. **Observed output and approved goldens are different trees.**
+   Approved goldens live under a reviewed ``tests/goldens/`` directory and are
    read-only to every normal run. Observed output is written beneath a
    configured runtime directory (``var/`` by convention, which is
    ignored by Git). ``GoldenArtifactGuard`` enforces the separation
@@ -30,6 +30,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -42,6 +43,7 @@ from personal_lms.domain.base import StrictModel
 from personal_lms.objective_packs.hashing import canonical_json, hash_record
 
 __all__ = [
+    "GATE_1_EXPECTATION_REFS",
     "FixtureAuthority",
     "GateArtifactPaths",
     "GateCheck",
@@ -53,14 +55,71 @@ __all__ = [
     "GoldenArtifactGuard",
     "GoldenWriteRefusedError",
     "ObservedGateReportStore",
+    "assert_safe_path_segment",
+    "provenance_path_for_primary",
+    "write_immutable_artifact",
 ]
 
 _SHA256_HEX_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 #: Check IDs permitted to report ``DEFERRED``. Everything else must reach
 #: a real outcome — deferral is not a way to make an inconvenient check
-#: disappear. Kept deliberately tiny and explicit.
-_DEFERRABLE_CHECK_IDS: frozenset[str] = frozenset({"G3-RI-QWEN-01", "G3-RI-QWEN-02"})
+#: disappear. Kept deliberately tiny and explicit, and kept in exact sync
+#: with ``report_schema.FROZEN_DEFERRABLE_CHECK_IDS`` and the frozen
+#: schema's own allowlist: a report that could defer more internally than
+#: the frozen schema permits would pass here and then fail projection, and
+#: a report that could defer *less* would be needlessly strict. Neither
+#: mismatch is acceptable, so the two sets must name the same check ids.
+_DEFERRABLE_CHECK_IDS: frozenset[str] = frozenset(
+    {"G3-RI-QWEN-01", "week-scale-retest-bank-comparison"}
+)
+
+#: Where each Gate 1 check's expectation contract lives.
+#:
+#: These are references a reviewer can open, not decorative labels. The
+#: seventeen GO/NG rows point into the frozen candidate specification,
+#: which enumerates them by check id. The nine FX rows point at the frozen
+#: manifest section or item bank that actually states the requirement,
+#: except where the requirement is an architecture property no frozen
+#: artifact can hold — those cite the traceability contract row itself.
+#:
+#: Kept beside the required-check inventory because it is the same kind of
+#: thing: trusted gate definition, never pack data. A run that could
+#: choose its own expectation reference could point every check at
+#: whatever it happened to satisfy.
+GATE_1_EXPECTATION_REFS: dict[str, str] = {
+    # GO and NG rows: the frozen candidate specification enumerates each.
+    **{
+        f"G1-GO-{index:02d}": (
+            f"tests/linchpin/expected/evidence-report.json#/checks/G1-GO-{index:02d}"
+        )
+        for index in range(1, 12)
+    },
+    **{
+        f"G1-NG-{index:02d}": (
+            # The frozen evidence-report.json holds one flat "checks" array
+            # covering both GO and NG rows — there is no separate
+            # "negative_cases" section in the actual frozen bytes, whatever
+            # the plan document's aspirational shape said. A reference must
+            # point at where the check really lives, not at a section that
+            # does not exist in the artifact being cited.
+            f"tests/linchpin/expected/evidence-report.json#/checks/G1-NG-{index:02d}"
+        )
+        for index in range(1, 7)
+    },
+    # FX rows: the frozen artifact that states the requirement.
+    "G1-FX-01": "tests/linchpin/expected/evidence-report.json#/sources_summary",
+    "G1-FX-02": "docs/plans/ccna-mastery-micro-lab/LINCHPIN_TRACEABILITY.md#G1-FX-02",
+    "G1-FX-03": "tests/linchpin/packs/objective-2.2/claims.yaml#/claims",
+    "G1-FX-04": "docs/plans/ccna-mastery-micro-lab/LINCHPIN_TRACEABILITY.md#G1-FX-04",
+    "G1-FX-05": "tests/linchpin/fixture-manifest.yaml#/retrieval_cases",
+    "G1-FX-06": "tests/linchpin/fixture-manifest.yaml#/fixture_path_hash_inventory",
+    "G1-FX-07": "tests/linchpin/fixture-manifest.yaml#",
+    "G1-FX-08": (
+        "tests/linchpin/fixture-manifest.yaml#/strict_record_compatibility/rc06_human_approval"
+    ),
+    "G1-FX-09": "docs/plans/ccna-mastery-micro-lab/LINCHPIN_TRACEABILITY.md#G1-FX-09",
+}
 
 
 class GateId(StrEnum):
@@ -181,6 +240,50 @@ class GateDefinition:
     def defines(self, check_id: str) -> bool:
         return check_id in self.required_check_ids
 
+    def expectation_ref(self, check_id: str) -> str:
+        """The expectation contract this check is judged against.
+
+        Part of the *trusted gate definition*, exactly like the required
+        inventory: a run cannot choose what it is compared to. Every
+        reference points at a real location in a frozen artifact — the
+        candidate specification, the fixture manifest, an item bank, or
+        the traceability contract — so a reader can open it.
+
+        Raises ``KeyError`` for a check the definition does not cover.
+        A missing reference is a gap in the contract and must surface as
+        one; inventing a placeholder would put a string that references
+        nothing into a report that claims to be comparable.
+        """
+        reference = GATE_1_EXPECTATION_REFS.get(check_id)
+        if reference is None:
+            raise KeyError(
+                f"no expectation contract is defined for {check_id!r}; a check with "
+                "nothing to be compared against cannot appear in a frozen-schema report"
+            )
+        return reference
+
+    def bind_expectations(self, checks: Sequence[GateCheck]) -> tuple[GateCheck, ...]:
+        """Attach each check's expectation reference from the definition.
+
+        Applied once, where the report is assembled, so no individual
+        check site can supply its own reference — the same reason
+        requiredness is not read from the report. A check the definition
+        does not cover raises rather than being given a filler value.
+
+        Always overwrites, even when a check already carries a non-null
+        ``expected_ref``. An earlier revision preserved a caller-supplied
+        value, which meant a check site that happened to set its own
+        ``expected_ref`` bypassed the trusted lookup entirely — including
+        the "unknown check id raises" guarantee, since a pre-set reference
+        skipped ``expectation_ref`` altogether. Trusting one check site's
+        opinion of what it should be compared against is exactly the
+        bypass this method exists to prevent.
+        """
+        return tuple(
+            check.model_copy(update={"expected_ref": self.expectation_ref(check.check_id)})
+            for check in checks
+        )
+
     @classmethod
     def for_gate(cls, gate_id: GateId) -> GateDefinition:
         """The definition for ``gate_id``.
@@ -269,11 +372,20 @@ class GateCheck(StrictModel):
 
     @model_validator(mode="after")
     def _only_named_checks_may_defer(self) -> Self:
-        if self.status is GateCheckStatus.DEFERRED and self.check_id not in _DEFERRABLE_CHECK_IDS:
+        if self.status is not GateCheckStatus.DEFERRED:
+            return self
+        if self.check_id not in _DEFERRABLE_CHECK_IDS:
             raise ValueError(
                 f"check {self.check_id} may not report 'deferred'; only "
                 f"{sorted(_DEFERRABLE_CHECK_IDS)} are deferrable, and a required "
                 "evidence, grading, state, route-safety, or authority check never is"
+            )
+        if self.required:
+            raise ValueError(
+                f"check {self.check_id} reports 'deferred' with required=True; a "
+                "deferred check must be required=False — deferring a check the gate "
+                "still treats as mandatory is not a real outcome, it is a required "
+                "check silently skipped"
             )
         return self
 
@@ -495,7 +607,7 @@ class GoldenWriteRefusedError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class GateArtifactPaths:
-    """The two artifact roots, from trusted application configuration.
+    """Observed and accepted-golden roots from trusted configuration.
 
     The defect this closes: a CLI caller previously chose *both* roots, so
     a normal run could point ``--golden-root`` at an empty directory and
@@ -524,6 +636,11 @@ class GateArtifactPaths:
                 "written inside the expected tree could be mistaken for an approved golden"
             )
 
+    @property
+    def accepted_root(self) -> Path:
+        """Canonical accepted-golden root (``expected_root`` is the compatibility name)."""
+        return self.expected_root
+
     @classmethod
     def for_project_root(
         cls, project_root: Path | str, *, require_executing_checkout: bool = False
@@ -548,7 +665,11 @@ class GateArtifactPaths:
                     f"checkout ({executing}); refusing to use {root}"
                 )
         return cls(
-            expected_root=root / "tests" / "linchpin" / "expected",
+            # Accepted runtime reports must remain outside the exact-tree
+            # frozen fixture under tests/linchpin. A reviewer acceptance may
+            # add a golden here without invalidating the fixture inventory it
+            # was produced from.
+            expected_root=root / "tests" / "goldens" / "ccna-mastery",
             observed_root=root / "var" / "ccna-mastery" / "gates",
         )
 
@@ -595,7 +716,7 @@ class GoldenArtifactGuard:
 
     @property
     def golden_root(self) -> Path:
-        return self._paths.expected_root
+        return self._paths.accepted_root
 
     @property
     def observed_root(self) -> Path:
@@ -642,7 +763,7 @@ class GoldenArtifactGuard:
 
 
 class ObservedGateReportStore:
-    """Writes observed gate reports beneath the configured runtime directory.
+    """Writes an immutable frozen-schema primary plus rich provenance sidecar.
 
     Write safety, in order:
 
@@ -656,10 +777,11 @@ class ObservedGateReportStore:
        following a symlink. The earlier predictable ``.json.tmp`` name
        could be pre-created as a symlink pointing at a golden, turning an
        ordinary run into an overwrite of approved output.
-    4. ``os.replace`` swaps it into place atomically, so an interrupted
-       run never leaves a half-written report a comparison would read as
-       real.
-    5. An existing report for the same run is *not* silently overwritten;
+    4. ``os.link`` publishes each fully written temporary file with
+       create-if-absent semantics, so a prior artifact is never replaced.
+    5. The sidecar is created first and the primary last, making the primary
+       the bundle's commit marker. A reader never accepts either file alone.
+    6. An existing report for the same run is *not* silently overwritten;
        a re-run must supply an explicit ``attempt_id``.
     """
 
@@ -668,12 +790,16 @@ class ObservedGateReportStore:
 
     def path_for(self, report: GateReport, *, attempt_id: str | None = None) -> Path:
         """``<observed_root>/<run_id>/<gate_id>[.<attempt_id>].json``."""
-        _assert_safe_segment(report.run_id, "run_id")
+        assert_safe_path_segment(report.run_id, "run_id")
         name = report.gate_id.value
         if attempt_id is not None:
-            _assert_safe_segment(attempt_id, "attempt_id")
+            assert_safe_path_segment(attempt_id, "attempt_id")
             name = f"{name}.{attempt_id}"
         return self._guard.observed_root / report.run_id / f"{name}.json"
+
+    def provenance_path_for(self, report: GateReport, *, attempt_id: str | None = None) -> Path:
+        """The immutable rich-provenance sidecar for ``report``."""
+        return provenance_path_for_primary(self.path_for(report, attempt_id=attempt_id))
 
     def write(
         self,
@@ -697,16 +823,34 @@ class ObservedGateReportStore:
            filesystem rather than of a prior existence check that two
            racing writers could both pass.
         """
+        # Expectation references are trusted gate-definition data. Bind them
+        # at the publication boundary as well as in the runner so direct
+        # store callers cannot emit a schema-invalid primary merely because
+        # their in-memory checks omitted redundant references.
+        published_report = report.model_copy(
+            update={"checks": report.definition.bind_expectations(report.checks)}
+        )
+        from personal_lms.labs.ccna_mastery.report_schema import (
+            canonical_frozen_schema_bytes,
+            provenance_sidecar_bytes,
+        )
+
+        primary_bytes = canonical_frozen_schema_bytes(published_report)
+        sidecar_bytes = provenance_sidecar_bytes(published_report, primary_bytes=primary_bytes)
+
         destination = (
             Path(destination_override)
             if destination_override is not None
-            else self.path_for(report, attempt_id=attempt_id)
+            else self.path_for(published_report, attempt_id=attempt_id)
         )
+        sidecar_destination = provenance_path_for_primary(destination)
 
         # Decide admissibility on the *lexical* path first — nothing has
         # been created yet, so a refusal here leaves no trace.
         self._guard.assert_write_authorized(destination)
         self._assert_lexically_contained(destination)
+        self._guard.assert_write_authorized(sidecar_destination)
+        self._assert_lexically_contained(sidecar_destination)
 
         run_directory = destination.parent
         run_directory.mkdir(parents=True, exist_ok=True)
@@ -716,29 +860,35 @@ class ObservedGateReportStore:
         resolved_parent = run_directory.resolve()
         self._guard.assert_observed_path(resolved_parent)
         resolved = resolved_parent / destination.name
+        resolved_sidecar = resolved_parent / sidecar_destination.name
         self._guard.assert_write_authorized(resolved)
+        self._guard.assert_write_authorized(resolved_sidecar)
 
-        handle, temporary_name = tempfile.mkstemp(
-            dir=resolved_parent, prefix=".gate-report-", suffix=".tmp"
-        )
-        temporary = Path(temporary_name)
+        if resolved.exists() or resolved_sidecar.exists():
+            raise GoldenWriteRefusedError(
+                f"an observed report bundle already exists for {resolved.name}; supply a "
+                "distinct non-authoritative attempt id rather than overwriting previous evidence"
+            )
+
         try:
-            with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                stream.write(report.to_canonical_json())
-            temporary.chmod(0o600)
-            try:
-                # Create-if-absent. Refuses when the target exists, and
-                # refuses for a hardlinked or symlinked target too.
-                os.link(temporary, resolved)
-            except FileExistsError as exc:
-                raise GoldenWriteRefusedError(
-                    f"an observed report already exists at {resolved.name}; supply a "
-                    "distinct non-authoritative attempt id rather than overwriting a "
-                    "previous run's evidence"
-                ) from exc
-        finally:
-            temporary.unlink(missing_ok=True)
-        return resolved
+            # Sidecar first, primary last: the primary is the commit marker.
+            # Readers require both and verify their byte/hash binding.
+            write_immutable_artifact(
+                directory=resolved_parent,
+                filename=resolved_sidecar.name,
+                data=sidecar_bytes,
+            )
+            return write_immutable_artifact(
+                directory=resolved_parent,
+                filename=destination.name,
+                data=primary_bytes,
+            )
+        except GoldenWriteRefusedError as exc:
+            raise GoldenWriteRefusedError(
+                f"an observed report already exists at {resolved.name}; supply a "
+                "distinct non-authoritative attempt id rather than overwriting a "
+                "previous run's evidence"
+            ) from exc
 
     def _assert_lexically_contained(self, destination: Path) -> None:
         """Refuse a destination outside the observed root, before any mkdir.
@@ -760,11 +910,62 @@ class ObservedGateReportStore:
             raise GoldenWriteRefusedError("an observed path must not traverse upward")
 
 
-def _assert_safe_segment(value: str, field_name: str) -> None:
-    """One path segment, with no traversal and no separators."""
+def provenance_path_for_primary(primary_path: Path | str) -> Path:
+    """Adjacent immutable sidecar path for one primary gate-report path."""
+    primary = Path(primary_path)
+    return primary.with_name(f"{primary.stem}.provenance{primary.suffix}")
+
+
+def assert_safe_path_segment(value: str, field_name: str) -> None:
+    """One path segment, with no traversal and no separators.
+
+    Public so every caller that turns an externally supplied ``run_id`` or
+    ``attempt_id`` into a path component — inside this module or in the
+    CLI layer that reads an already-written report back — validates it the
+    same way. A caller-controlled identifier that reaches a path join
+    unvalidated is a traversal primitive regardless of which code happens
+    to do the joining.
+    """
     if not value or value in (".", ".."):
         raise GoldenWriteRefusedError(f"{field_name} must be a non-trivial path segment")
     if "/" in value or "\\" in value or "\x00" in value:
         raise GoldenWriteRefusedError(
             f"{field_name} must be a single path segment with no separators"
         )
+
+
+def write_immutable_artifact(*, directory: Path, filename: str, data: bytes) -> Path:
+    """Atomically create ``directory/filename``, refusing to overwrite.
+
+    Shared by every immutable JSON artifact this module writes — an
+    observed gate report and an accepted golden are both write-once
+    documents guarded by the same containment rules, and a second,
+    independently written copy of this exact mkstemp/chmod/link dance is
+    how one of them would eventually drift and lose the create-if-absent
+    guarantee.
+
+    ``directory`` must already be the *resolved*, authorized destination
+    directory and must already exist; this function performs no
+    containment check or ``mkdir`` of its own — those are the caller's
+    responsibility, because they differ by authorization context (a normal
+    observed-report write versus a reviewer-authorized golden write).
+    """
+    handle, temporary_name = tempfile.mkstemp(dir=directory, prefix=".artifact-", suffix=".tmp")
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(data)
+        temporary.chmod(0o600)
+        destination = directory / filename
+        try:
+            # Create-if-absent. Refuses when the target exists, and
+            # refuses for a hardlinked or symlinked target too.
+            os.link(temporary, destination)
+        except FileExistsError as exc:
+            raise GoldenWriteRefusedError(
+                f"an artifact already exists at {filename}; a second write must not "
+                "silently overwrite existing evidence"
+            ) from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination

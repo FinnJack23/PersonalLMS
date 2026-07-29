@@ -214,7 +214,10 @@ class TestGlobalContractsAreExecutable:
 
     def test_global_04_deferral_cannot_hide_a_core_failure(self) -> None:
         allowlisted = GateCheck(
-            check_id="G3-RI-QWEN-01", status=GateCheckStatus.DEFERRED, reason_code="ollama_absent"
+            check_id="G3-RI-QWEN-01",
+            status=GateCheckStatus.DEFERRED,
+            required=False,
+            reason_code="ollama_absent",
         )
         checks = (
             *tuple(
@@ -248,3 +251,85 @@ class TestGlobalContractsAreExecutable:
 
     def test_global_06_gate_id_is_constrained_to_the_three_gates(self) -> None:
         assert {gate.value for gate in GateId} == {"gate-1", "gate-2", "gate-3"}
+
+
+class TestBindExpectationsCannotBeChosenByACheckSite:
+    """``bind_expectations`` is the only source of a check's comparison target.
+
+    An earlier revision preserved a caller-supplied ``expected_ref`` when
+    one was already set, which meant a check site that happened to set its
+    own reference bypassed the trusted lookup — including the "unknown
+    check id raises" guarantee, since a pre-set reference skipped
+    ``expectation_ref`` entirely.
+    """
+
+    def test_a_caller_supplied_reference_is_overwritten_not_preserved(self) -> None:
+        smuggled = GateCheck(
+            check_id="G1-GO-01",
+            status=GateCheckStatus.PASSED,
+            reason_code="probe",
+            expected_ref="https://attacker.example/fake",
+        )
+
+        bound = GateDefinition.gate_1().bind_expectations((smuggled,))
+
+        assert bound[0].expected_ref == GateDefinition.gate_1().expectation_ref("G1-GO-01")
+        assert bound[0].expected_ref != "https://attacker.example/fake"
+
+    def test_an_unknown_check_id_still_raises_even_with_a_preset_reference(self) -> None:
+        smuggled = GateCheck(
+            check_id="G9-NOT-A-ROW",
+            status=GateCheckStatus.PASSED,
+            reason_code="probe",
+            expected_ref="docs/plans/ccna-mastery-micro-lab/LINCHPIN_TRACEABILITY.md",
+        )
+
+        with pytest.raises(KeyError, match="no expectation contract is defined"):
+            GateDefinition.gate_1().bind_expectations((smuggled,))
+
+
+class TestDeferralAllowlistsAreUnified:
+    """The internal and frozen-schema deferral allowlists must name the same ids.
+
+    A gate report is validated internally against ``gates._DEFERRABLE_CHECK_IDS``
+    and, separately, projected onto the frozen schema using
+    ``report_schema.FROZEN_DEFERRABLE_CHECK_IDS``. If the two ever disagreed, a
+    report could accept a deferral internally that the frozen projection then
+    refuses (or vice versa) — a report that is simultaneously legal and
+    illegal depending only on which half of the pipeline looked at it.
+    """
+
+    def test_the_internal_and_frozen_allowlists_are_identical(self) -> None:
+        from personal_lms.labs.ccna_mastery import gates as gates_module
+        from personal_lms.labs.ccna_mastery.report_schema import FROZEN_DEFERRABLE_CHECK_IDS
+
+        assert gates_module._DEFERRABLE_CHECK_IDS == FROZEN_DEFERRABLE_CHECK_IDS  # noqa: SLF001
+        assert {  # noqa: SLF001
+            "G3-RI-QWEN-01",
+            "week-scale-retest-bank-comparison",
+        } == gates_module._DEFERRABLE_CHECK_IDS
+
+
+class TestFrozenSchemaViewCannotSubstituteAManifestHash:
+    """``frozen_schema_view`` always cites the hash actually bound to the report."""
+
+    def test_the_projected_hash_is_always_the_reports_own(self) -> None:
+        from personal_lms.labs.ccna_mastery.report_schema import frozen_schema_view
+
+        bound_checks = GateDefinition.gate_1().bind_expectations(all_defined())
+        subject = report(checks=bound_checks, fixture_manifest_hash="c" * 64)
+
+        view = frozen_schema_view(subject)
+
+        assert view["fixture_manifest_sha256"] == "c" * 64
+
+    def test_the_function_no_longer_accepts_a_manifest_override(self) -> None:
+        """The removed footgun: no call site ever used it, and its only
+        effect was a manifest-hash substitution primitive."""
+        from personal_lms.labs.ccna_mastery.report_schema import frozen_schema_view
+
+        bound_checks = GateDefinition.gate_1().bind_expectations(all_defined())
+        subject = report(checks=bound_checks)
+
+        with pytest.raises(TypeError):
+            frozen_schema_view(subject, manifest_sha256="d" * 64)  # type: ignore[call-arg]

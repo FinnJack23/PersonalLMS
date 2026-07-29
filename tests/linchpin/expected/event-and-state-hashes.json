@@ -1,0 +1,24 @@
+{
+  "artifact_kind": "P0_CANDIDATE_SPECIFICATION",
+  "not_a_gate_report": true,
+  "note": "Freezes the only hashes that are honestly computable without Gate 2 code: the CLI scenario's canonical starting/target state hashes, derived by hand-applying the exact canonicalization rule specified in 05-CLI-SIMULATOR.md and repeated in scenario-trunk-native-vlan-mismatch.yaml. Event-stream hashes, interrupted-replay hashes, and per-session canonical state hashes require SessionProjector / append-only event repository code (WP6), which does not exist yet, and are left null with pending_implementation markers rather than fabricated.",
+  "gate_id": "gate-2",
+  "cli_scenario_hashes": {
+    "scenario_ref": "trunk-native-vlan-mismatch@1.0.0",
+    "starting_state_sha256": "1a690fc8dd23e944db746347732a5e3b063baad7dac05290e964946c90e93f90",
+    "target_repaired_state_sha256": "6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38",
+    "canonicalization_method": "sha256(json.dumps(canonical_payload, sort_keys=True, separators=(',',':')).encode('utf-8')); canonical_payload = {command_mode, current_device, devices: {device_id: {vlans: sorted, interfaces: {interface_id: {admin_up, oper_up, switchport_mode, tagging, native_vlan, allowed_vlans: sorted}}}}}; no timestamps/display text/event IDs included.",
+    "independently_recomputed_by": "gen_hashes.py (P0 scratchpad script, stdlib json + hashlib only)",
+    "equivalence_cases_reaching_target_hash": ["eq-separate-commands", "eq-incremental-allowed-vlan"]
+  },
+  "checks": [
+    {"check_id": "G2-GO-05", "target": "Both correct CLI command orderings reach the same canonical state and grade.", "satisfied_by_current_content": true, "verification": "EXECUTED", "evidence": "v2: both eq-separate-commands and eq-incremental-allowed-vlan were run through a stdlib reference simulator; both reach final_state_sha256 = 6a7d2785a9765a2e953ff6f64925bf4d3084cfe3475b35b3608d9f86ae820b38 from starting state 1a690fc8dd23e944db746347732a5e3b063baad7dac05290e964946c90e93f90, and each satisfies verification_policy (pre-change observations on both switches, post-change on lab-sw2). Execution, not two records naming the same hash, is the proof."},
+    {"check_id": "G2-GO-06", "target": "Invalid commands never mutate state.", "satisfied_by_current_content": true, "verification": "EXECUTED", "evidence": "v2: all four invalid_command_cases (unknown command 'reboot lab-sw2', wrong-mode 'switchport mode trunk', out-of-range 'switchport trunk native vlan 5000', shell-metachar 'show interfaces trunk; rm -rf /') were run and each returned accepted=false with an unchanged canonical state hash."},
+    {"check_id": "G2-GO-08", "target": "Interrupted replay reproduces event sequence, final state hash, facet scores, achievement, review status, and due window.", "satisfied_by_current_content": "pending_implementation", "blocking_gap": "Requires SQLiteStudySessionRepository and SessionProjector.replay (WP6), not yet implemented."},
+    {"check_id": "G2-NG-03", "target": "Do not scale if the same events produce a different result.", "fixture_role": "General property to be proven by WP6's replay tests over this fixture's event traces once they exist; not directly testable from static content."}
+  ],
+  "event_stream_hashes": {
+    "status": "pending_implementation",
+    "reason": "No LearningEvent/EventEnvelope append-only repository exists yet (WP6). Fabricating a plausible-looking hash here would misrepresent an unrun computation as a frozen expectation, which GLOBAL-05 and this task's instructions ('do not accept or rewrite goldens') both prohibit."
+  }
+}

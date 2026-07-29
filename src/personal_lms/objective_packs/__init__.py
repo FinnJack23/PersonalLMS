@@ -46,6 +46,7 @@ from personal_lms.objective_packs.loader import (
     PackLoadResult,
 )
 from personal_lms.objective_packs.scoring import (
+    CLAIM_SCORE_ALGORITHM_PROVENANCE,
     CLAIM_SCORE_POLICY_VERSION,
     ClaimEvidencePolicy,
     ClaimGroundingResult,
@@ -56,6 +57,7 @@ from personal_lms.objective_packs.validation import (
 )
 
 __all__ = [
+    "CLAIM_SCORE_ALGORITHM_PROVENANCE",
     "CLAIM_SCORE_POLICY_VERSION",
     "ELIGIBILITY_DIMENSIONS",
     "GATE_1_GROUNDING_FLOOR_BASIS_POINTS",

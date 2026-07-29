@@ -57,8 +57,16 @@ _SHA256_HEX_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 # separate records even when their labels overlap. Deliberately a pattern
 # over a parsed model at this layer so a reference stays one stable,
 # comparable, hashable string everywhere it is used as a key.
+#
+# The number is dotted decimals with an optional *single* trailing
+# lowercase letter component, so a blueprint that enumerates
+# sub-objectives ("2.1.b") parses while malformed references still fail.
+# The letter is deliberately one character and deliberately last: widening
+# it to ``[a-z0-9]+`` would accept "2.abc" and "2.1.zz9", which are not
+# references any blueprint issues and would silently key two different
+# objectives to one string.
 _OBJECTIVE_REF_PATTERN = re.compile(
-    r"^[a-z0-9][a-z0-9.\-]*-v[0-9]+(?:\.[0-9]+)*:[0-9]+(?:\.[0-9]+)*$"
+    r"^[a-z0-9][a-z0-9.\-]*-v[0-9]+(?:\.[0-9]+)*:[0-9]+(?:\.[0-9]+)*(?:\.[a-z])?$"
 )
 
 
@@ -275,18 +283,51 @@ class ExtractionMetadata(StrictModel):
 
 
 class PageTextSelector(StrictModel):
-    """Locates text on a page of a paginated source."""
+    """Locates text on a page of a paginated source.
+
+    Two modes, and exactly two. With both offsets present the selector
+    names a character range in the page's extracted text. With neither
+    present it is *page-scoped*: it names a passage that occurs on this
+    page, and the extractor is required to locate it in the text it
+    actually extracted from the source bytes.
+
+    The page-scoped mode exists because a frozen fixture can pin the page
+    a passage lives on without pinning offsets into a parser's output —
+    offsets are a property of whichever extractor ran, so authoring them
+    by hand would be inventing a number no one measured. Resolution stays
+    byte-derived either way: a page-scoped region that cannot be located
+    in the extracted text fails, and never falls back to its own
+    authored text.
+
+    One offset without the other is refused rather than defaulted: a
+    half-specified range is an authoring mistake, and guessing the other
+    end would silently widen or narrow the reviewed subject.
+    """
 
     kind: Literal["page_text"] = "page_text"
     page_number: int = Field(gt=0)
-    start_offset: int = Field(ge=0)
-    end_offset: int = Field(gt=0)
+    start_offset: int | None = Field(default=None, ge=0)
+    end_offset: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def _range_is_ordered(self) -> Self:
-        if self.start_offset >= self.end_offset:
+        if (self.start_offset is None) != (self.end_offset is None):
+            raise ValueError(
+                "start_offset and end_offset must both be present or both be absent; "
+                "a half-specified range does not name a region"
+            )
+        if (
+            self.start_offset is not None
+            and self.end_offset is not None
+            and self.start_offset >= self.end_offset
+        ):
             raise ValueError("start_offset must be strictly less than end_offset")
         return self
+
+    @property
+    def is_page_scoped(self) -> bool:
+        """True when the selector names a page rather than a character range."""
+        return self.start_offset is None
 
 
 class ImageRegionSelector(StrictModel):
@@ -894,7 +935,20 @@ class ObjectivePackValidationReport(StrictModel):
     grounding_floor_basis_points: int = Field(ge=0, le=10_000)
     calculation_policy_version: str = Field(
         min_length=1,
-        description="Which scoring formula produced recomputed_claim_scores.",
+        description=(
+            "The public calculation-policy identifier the scores were produced under. "
+            "This is the comparison key: two reports are comparable only when it matches."
+        ),
+    )
+    calculation_algorithm_provenance: str = Field(
+        min_length=1,
+        description=(
+            "Where that policy's arithmetic is specified. Provenance only — a reader "
+            "uses it to find the document, never to decide whether two scores compare. "
+            "Kept separate from calculation_policy_version so a specification name can "
+            "never stand in for the agreed contract name. Required: a validation report "
+            "with no recorded provenance is a report about an unspecified formula."
+        ),
     )
     canonical_pack_hash: str
 

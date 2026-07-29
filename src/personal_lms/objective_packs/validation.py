@@ -28,6 +28,7 @@ from personal_lms.domain.objective_packs import (
     ObjectivePack,
     ObjectivePackEvidenceEnvelope,
     ObjectivePackValidationReport,
+    QuarantineStatus,
     ReviewState,
     ValidationFinding,
     ValidationReasonCode,
@@ -53,6 +54,11 @@ __all__ = [
 #: not to pack data: an author-controlled field could otherwise lower the
 #: bar for their own pack. See ``ObjectivePackValidator.grounding_floor_for``.
 GATE_1_GROUNDING_FLOOR_BASIS_POINTS = 8_500
+
+
+def _scope_severity(*, quarantined: bool, rejected: bool) -> ValidationSeverity:
+    """Error for a record still in play; warning for one already excluded."""
+    return ValidationSeverity.WARNING if quarantined or rejected else ValidationSeverity.ERROR
 
 
 class ObjectivePackValidator:
@@ -113,6 +119,7 @@ class ObjectivePackValidator:
             answer_bearing_claim_ids=tuple(sorted(pack.answer_bearing_claim_ids)),
             grounding_floor_basis_points=floor,
             calculation_policy_version=self._claim_policy.policy_version,
+            calculation_algorithm_provenance=self._claim_policy.algorithm_provenance,
             canonical_pack_hash=hash_record(pack),
         )
 
@@ -372,11 +379,26 @@ class ObjectivePackValidator:
         # Evidence scope and artifact currency both have to agree with the
         # pack's objective version. A region scoped elsewhere would be
         # filtered at retrieval anyway; catching it here says *why*.
+        #
+        # Severity depends on whether the record is still in play. A pack
+        # is expected to carry deliberate distractors — a wrong-blueprint
+        # passage, an injected paragraph — precisely so the exclusion
+        # machinery has something to exclude, and those records are
+        # quarantined or rejected already. Reporting their out-of-scope
+        # refs as *errors* made a pack unable to validate for containing
+        # exactly the negative cases the gate requires. They stay
+        # reported, as warnings, so they remain inspectable; a record that
+        # is not otherwise excluded is still an error, because that one
+        # really could reach a learner.
         for region in pack.evidence_regions:
             if expected not in region.objective_refs:
                 findings.append(
                     ValidationFinding(
                         reason_code=ValidationReasonCode.OBJECTIVE_REF_MISMATCH,
+                        severity=_scope_severity(
+                            quarantined=region.quarantine_status is QuarantineStatus.QUARANTINED,
+                            rejected=region.review_state is ReviewState.REJECTED,
+                        ),
                         subject_id=region.evidence_id,
                         message=("evidence region is not scoped to the pack's objective version"),
                         detail={
@@ -391,6 +413,10 @@ class ObjectivePackValidator:
                 findings.append(
                     ValidationFinding(
                         reason_code=ValidationReasonCode.OBJECTIVE_REF_MISMATCH,
+                        severity=_scope_severity(
+                            quarantined=source.quarantine_status is QuarantineStatus.QUARANTINED,
+                            rejected=source.review_state is ReviewState.REJECTED,
+                        ),
                         subject_id=source.source_id,
                         message=(
                             "source artifact is not recorded as current for the pack's "
@@ -453,6 +479,12 @@ class ObjectivePackValidator:
         Five factors judged under one scoring policy are not comparable
         with five judged under another, so mixing them silently would make
         a recomputed score meaningless.
+
+        The comparison is exact equality against the *public* policy
+        identifier, and there is deliberately no alias table: an unknown
+        or merely similar name fails closed. The specification reference
+        (``algorithm_provenance``) is never accepted here — a document
+        name is not a contract name.
         """
         expected = self._claim_policy.policy_version
         findings: list[ValidationFinding] = []

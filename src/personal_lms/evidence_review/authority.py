@@ -20,24 +20,32 @@ sense that it goes unreported.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from personal_lms.domain.evidence_review import (
     EvidenceReviewDecision,
     EvidenceReviewKind,
     EvidenceReviewOutcome,
+    ReviewerIdentity,
     compute_review_subject_digest,
+    derive_decision_id,
 )
 from personal_lms.domain.objective_packs import (
     EvidenceRegion,
     ImageRegionSelector,
     ObjectivePack,
+    QuarantineStatus,
+    ReviewState,
     SourceArtifactRef,
+    TrustStatus,
 )
 from personal_lms.evidence_review.service import EvidenceReviewService
 
 __all__ = [
     "AuthorityVerdict",
     "EvidenceAuthoritySnapshot",
+    "authorized_view",
+    "record_region_approval",
     "review_kind_for",
     "subject_digest_for",
     "verify_decision",
@@ -139,6 +147,67 @@ def verify_decision(
     return AuthorityVerdict(evidence_id=region.evidence_id, authorized=True, reason="approved")
 
 
+def record_region_approval(
+    *,
+    pack: ObjectivePack,
+    region: EvidenceRegion,
+    artifact: SourceArtifactRef,
+    review_service: EvidenceReviewService,
+    reviewer_id: str,
+    reviewer_role: str,
+    outcome: EvidenceReviewOutcome,
+    reason: str,
+    accessible_description: str | None,
+    decided_at: datetime,
+) -> EvidenceReviewDecision:
+    """Record one reviewer decision, bound to the region's current subject.
+
+    This *is* the bounded approval CLI's core logic
+    (``ccna-lab evidence approve-region``) — the CLI handler and Gate 1's
+    G1-FX-08 self-test both call this one function, rather than the gate
+    re-implementing a second copy that could silently drift from what the
+    CLI actually does. It performs exactly what a human operator's CLI
+    invocation performs: recompute the current subject digest so the
+    decision can never be re-scoped to something the reviewer never saw,
+    chain any prior decision this one supersedes, construct the immutable
+    decision record, and persist it through the real
+    ``EvidenceReviewService`` — whose ``record_decision`` independently
+    re-verifies subject binding, kind/description agreement, and linear
+    history before anything is appended.
+    """
+    kind = review_kind_for(region)
+    digest = subject_digest_for(pack, region, artifact)
+
+    current = review_service.current_decision(region.evidence_id)
+    supersedes = current.decision_id if current is not None else None
+
+    decision = EvidenceReviewDecision(
+        decision_id=derive_decision_id(
+            evidence_id=region.evidence_id,
+            subject_digest=digest,
+            reviewer_id=reviewer_id,
+            decided_at=decided_at.isoformat(),
+        ),
+        evidence_id=region.evidence_id,
+        source_id=artifact.source_id,
+        pack_id=pack.manifest.pack_id,
+        pack_version=pack.manifest.pack_version,
+        objective_ref=pack.objective_ref,
+        kind=kind,
+        outcome=outcome,
+        subject_digest=digest,
+        source_sha256=artifact.sha256,
+        reviewer=ReviewerIdentity(reviewer_id=reviewer_id, role=reviewer_role),
+        reason=reason,
+        accessible_description=(
+            accessible_description if kind is EvidenceReviewKind.VISUAL else None
+        ),
+        decided_at=decided_at,
+        supersedes_decision_id=supersedes,
+    )
+    return review_service.record_decision(decision, pack=pack, region=region, artifact=artifact)
+
+
 @dataclass(frozen=True, slots=True)
 class EvidenceAuthoritySnapshot:
     """What the persisted review record currently authorizes for one pack.
@@ -236,3 +305,58 @@ class EvidenceAuthoritySnapshot:
             stale_evidence_ids=tuple(sorted(stale)),
             decisions_by_evidence_id=decisions,
         )
+
+
+def authorized_view(pack: ObjectivePack, snapshot: EvidenceAuthoritySnapshot) -> ObjectivePack:
+    """``pack`` with review and trust materialized from persisted decisions.
+
+    This module is the only place allowed to move a record into an
+    approved, trusted state, and this is the function that does it. A
+    format adapter loads every region ``PENDING``/``UNTRUSTED`` — because
+    an authoring file's opinion of itself is a claim — and the promotion
+    to ``TRUSTED`` happens here, driven entirely by decisions that were
+    persisted, verified at read time, and still bound to the current
+    subject.
+
+    Two directions, both one-way:
+
+    - A region is promoted **only** when ``snapshot.authorizes`` says a
+      current decision covers it. Nothing is ever demoted from ``REJECTED``
+      or un-quarantined, so the restricting direction is untouched.
+    - A source is promoted only when at least one of its own regions is
+      authorized and it is not quarantined. That is not an inference from
+      an authored field: approving a region pins ``source_sha256`` in the
+      decision, so a reviewer approving a region has, in that act,
+      accepted those exact source bytes as its provenance. A source with
+      no approved region contributes no eligible evidence either way, so
+      the rule cannot over-grant.
+
+    Returns a *new* pack. The loaded one keeps its unpromoted states, so
+    a caller can always see what the fixture actually said.
+    """
+    authorized_source_ids = {
+        region.source_id
+        for region in pack.evidence_regions
+        if snapshot.authorizes(region.evidence_id)
+    }
+
+    regions = tuple(
+        region.model_copy(
+            update={"review_state": ReviewState.APPROVED, "trust_status": TrustStatus.TRUSTED}
+        )
+        if snapshot.authorizes(region.evidence_id)
+        else region
+        for region in pack.evidence_regions
+    )
+    artifacts = tuple(
+        artifact.model_copy(
+            update={"review_state": ReviewState.APPROVED, "trust_status": TrustStatus.TRUSTED}
+        )
+        if (
+            artifact.source_id in authorized_source_ids
+            and artifact.quarantine_status is QuarantineStatus.CLEAR
+        )
+        else artifact
+        for artifact in pack.source_artifacts
+    )
+    return pack.model_copy(update={"evidence_regions": regions, "source_artifacts": artifacts})

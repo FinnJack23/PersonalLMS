@@ -143,15 +143,24 @@ class TestDeferralAllowlist:
             make_check(check_id="G1-GO-01", status=GateCheckStatus.DEFERRED)
 
     def test_the_named_optional_qwen_checks_may_defer(self) -> None:
-        check = make_check(check_id="G3-RI-QWEN-01", status=GateCheckStatus.DEFERRED)
+        check = make_check(
+            check_id="G3-RI-QWEN-01", status=GateCheckStatus.DEFERRED, required=False
+        )
 
         assert check.status is GateCheckStatus.DEFERRED
+
+    def test_a_named_deferrable_check_still_refuses_required_true(self) -> None:
+        """Deferral is only a real outcome for a check the gate does not require."""
+        with pytest.raises(ValueError, match="required=True"):
+            make_check(check_id="G3-RI-QWEN-01", status=GateCheckStatus.DEFERRED, required=True)
 
     def test_deferred_checks_are_listed(self) -> None:
         report = make_report(
             checks=(
                 *full_checks(),
-                make_check(check_id="G3-RI-QWEN-01", status=GateCheckStatus.DEFERRED),
+                make_check(
+                    check_id="G3-RI-QWEN-01", status=GateCheckStatus.DEFERRED, required=False
+                ),
             )
         )
 

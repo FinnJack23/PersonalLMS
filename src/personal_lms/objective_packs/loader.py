@@ -251,6 +251,22 @@ class PackLoadResult:
     source_manifest_bindings: dict[str, SourceManifestBinding] = field(default_factory=dict)
     findings: tuple[ValidationFinding, ...] = ()
 
+    #: The verified self-hash of a frozen fixture manifest, when the pack
+    #: came from one. Deliberately its own field and never conflated with
+    #: a canonical hash of the ``ObjectivePackManifest`` model: one covers
+    #: the exact authored bytes a human reviewed, the other covers a
+    #: derived record. A gate report that cited whichever happened to be
+    #: available would be citing two different things under one name.
+    fixture_manifest_hash: str | None = None
+
+    #: Typed frozen retrieval contract, when the source format carries one.
+    retrieval_cases: object | None = None
+
+    #: Authoring metadata the strict records exclude by design. Typed as
+    #: ``object`` here so the generic loader keeps no import edge to a
+    #: format adapter; callers that need it narrow the type themselves.
+    fixture_extensions: object | None = None
+
     @property
     def has_errors(self) -> bool:
         return any(finding.severity is ValidationSeverity.ERROR for finding in self.findings)

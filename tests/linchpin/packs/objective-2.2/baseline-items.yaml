@@ -1,0 +1,370 @@
+schema_version: "1.0"
+status: technical_approval_complete
+objective_ref: ccna-200-301-v1.1:2.2
+plan_id: objective-2.2-baseline-v1
+plan_version: 1
+exposure_class: baseline
+item_count: 12
+
+alan_approval:
+  reviewer: alan
+  reviewed_on: "2026-07-27"
+  reviewed_at: null
+  reviewed_at_reason: exact_time_not_captured
+  source: codex_conversation_user_message
+  approved_item_ids:
+    - 11111111-1111-4111-8111-000000000001
+    - 11111111-1111-4111-8111-000000000002
+    - 11111111-1111-4111-8111-000000000003
+    - 11111111-1111-4111-8111-000000000004
+    - 11111111-1111-4111-8111-000000000005
+    - 11111111-1111-4111-8111-000000000006
+    - 11111111-1111-4111-8111-000000000007
+    - 11111111-1111-4111-8111-000000000008
+    - 11111111-1111-4111-8111-000000000009
+    - 11111111-1111-4111-8111-000000000010
+    - 11111111-1111-4111-8111-000000000011
+    - 11111111-1111-4111-8111-000000000012
+  scope: >-
+    Alan explicitly approved all twelve baseline items after reviewing the
+    complete pending-content packet. Items 1/4/10/12 retain their 2026-07-27
+    decisions; items 2/3/5/6/7/8/9/11 carry the 2026-07-28 completion decision.
+
+items:
+  - item_id: 11111111-1111-4111-8111-000000000001
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-27"}
+    ordinal: 1
+    construct: concept
+    facet: concept
+    item_type: single_select
+    difficulty: foundation
+    concept_tags: [access_vs_trunk]
+    elements: [trunk_ports]
+    claim_ids: [claim-trunk-multiple-vlans]
+    misconception_tags: [access_trunk_confusion]
+    prompt: >-
+      An ordinary data access port, with no voice VLAN configured, carries
+      traffic for a single data VLAN and forwards that VLAN's frames
+      untagged. Which port mode is this?
+    response_schema: single_select_v1
+    options:
+      - {option_id: a, text: Access}
+      - {option_id: b, text: Trunk}
+      - {option_id: c, text: Dynamic auto}
+      - {option_id: d, text: Dynamic desirable}
+    answer_key: {correct_option_id: a}
+
+  - item_id: 11111111-1111-4111-8111-000000000002
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+    ordinal: 2
+    construct: concept
+    facet: concept
+    item_type: short_answer
+    difficulty: foundation
+    concept_tags: [dot1q_tagging]
+    elements: [dot1q]
+    claim_ids: [claim-dot1q-identifies-vlan]
+    misconception_tags: [dot1q_tagging_error]
+    prompt: >-
+      In one or two sentences, explain what an 802.1Q tag adds to an
+      Ethernet frame and why a switch needs it on a trunk link.
+    response_schema: short_answer_v1
+    rubric:
+      - criterion_id: mentions-vlan-identifier
+        description: >-
+          Response states that the tag carries (or identifies) a VLAN ID
+          / VLAN identifier.
+        points: 6
+      - criterion_id: mentions-trunk-purpose
+        description: >-
+          Response states the tag lets the receiving switch determine
+          which VLAN the frame belongs to across a link carrying multiple
+          VLANs.
+        points: 4
+    points_possible: 10
+
+  - item_id: 11111111-1111-4111-8111-000000000003
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+    ordinal: 3
+    construct: concept
+    facet: concept
+    item_type: single_select
+    difficulty: foundation
+    concept_tags: [native_vlan_behavior]
+    elements: [native_vlan]
+    claim_ids: [claim-native-vlan-treatment]
+    misconception_tags: [native_vlan_behavior_error]
+    prompt: >-
+      On an 802.1Q trunk, how is a frame belonging to the native VLAN
+      transmitted across the trunk link?
+    response_schema: single_select_v1
+    options:
+      - {option_id: a, text: Untagged}
+      - {option_id: b, text: Always tagged with VLAN 1}
+      - {option_id: c, text: Tagged with the trunk's lowest allowed VLAN ID}
+      - {option_id: d, text: Dropped}
+    answer_key: {correct_option_id: a}
+
+  - item_id: 11111111-1111-4111-8111-000000000004
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-27"}
+    ordinal: 4
+    construct: topology_reasoning
+    facet: topology_reasoning
+    item_type: topology_trace
+    difficulty: application
+    concept_tags: [multi_switch_reasoning, dot1q_tagging]
+    elements: [dot1q]
+    claim_ids: [claim-trunk-multiple-vlans, claim-dot1q-identifies-vlan]
+    misconception_tags: [dot1q_tagging_error]
+    learner_assets: [objective-2.2-infographic.png]
+    prompt: >-
+      Using the trunk topology diagram: Host A is in VLAN 10 and attached
+      to LAB-SW1. It sends a broadcast frame, which LAB-SW1 floods to VLAN
+      10 across the LAB-SW1-to-LAB-SW2 trunk. As that broadcast frame
+      crosses the trunk link, is it tagged or untagged, and if tagged, with
+      which VLAN ID? (VLAN 10 is not the trunk's native VLAN.)
+    response_schema: topology_trace_v1
+    answer_key:
+      tagged: true
+      vlan_id: 10
+      rationale_key: vlan_10_is_not_the_native_vlan
+    review_note: >-
+      v2 fix: the prior wording implied a VLAN 10 unicast reaching the
+      VLAN 20 host without a router, which is impossible at Layer 2. Now
+      scoped to a VLAN 10 broadcast flooded within VLAN 10 across the
+      trunk, which is a technically valid Layer-2 frame that is tagged
+      with VLAN 10.
+
+  - item_id: 11111111-1111-4111-8111-000000000005
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+    ordinal: 5
+    construct: topology_reasoning
+    facet: topology_reasoning
+    item_type: topology_trace
+    difficulty: application
+    concept_tags: [native_vlan_behavior, multi_switch_reasoning]
+    elements: [native_vlan]
+    claim_ids: [claim-native-vlan-treatment]
+    misconception_tags: [native_vlan_behavior_error]
+    learner_assets: [objective-2.2-infographic.png]
+    prompt: >-
+      Using the same topology, a device attached with an access port
+      assigned to VLAN 99 (the configured native VLAN) sends a frame
+      across the LAB-SW1-to-LAB-SW2 trunk. Is that frame tagged or
+      untagged when it crosses the trunk?
+    response_schema: topology_trace_v1
+    answer_key:
+      tagged: false
+      vlan_id: 99
+      rationale_key: native_vlan_traffic_is_sent_untagged
+
+  - item_id: 11111111-1111-4111-8111-000000000006
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+    ordinal: 6
+    construct: topology_reasoning
+    facet: topology_reasoning
+    item_type: multi_select
+    difficulty: application
+    concept_tags: [allowed_vlan_set, multi_switch_reasoning]
+    elements: [trunk_ports]
+    claim_ids: [claim-allowed-vlan-effect]
+    misconception_tags: [allowed_vlan_omission]
+    prompt: >-
+      The trunk's allowed VLAN list is configured as 10,20,99. Select
+      every VLAN below whose frames can cross this trunk.
+    response_schema: multi_select_v1
+    options:
+      - {option_id: a, text: VLAN 10}
+      - {option_id: b, text: VLAN 20}
+      - {option_id: c, text: VLAN 30}
+      - {option_id: d, text: VLAN 99}
+      - {option_id: e, text: VLAN 1}
+    answer_key: {correct_option_ids: [a, b, d]}
+
+  - item_id: 11111111-1111-4111-8111-000000000007
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+    ordinal: 7
+    construct: cli_configuration
+    facet: cli_configuration
+    item_type: ordering
+    difficulty: application
+    concept_tags: [corrective_configuration]
+    elements: [trunk_ports]
+    claim_ids: [claim-trunk-multiple-vlans, claim-native-vlan-treatment, claim-allowed-vlan-effect]
+    misconception_tags: []
+    prompt: >-
+      Starting from privileged EXEC mode on LAB-SW2, put these steps in
+      the correct order to configure Gi0/1 as an 802.1Q trunk with
+      native VLAN 99 and allowed VLANs 10, 20, 99.
+    response_schema: ordering_v1
+    steps:
+      - {step_id: s1, text: "configure terminal"}
+      - {step_id: s2, text: "interface gi0/1"}
+      - {step_id: s3, text: "switchport mode trunk"}
+      - {step_id: s4, text: "switchport trunk native vlan 99"}
+      - {step_id: s5, text: "switchport trunk allowed vlan 10,20,99"}
+      - {step_id: s6, text: "end"}
+    answer_key: {correct_order: [s1, s2, s3, s4, s5, s6]}
+
+  - item_id: 11111111-1111-4111-8111-000000000008
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+    ordinal: 8
+    construct: cli_configuration
+    facet: cli_configuration
+    item_type: cli_interpretation
+    difficulty: application
+    concept_tags: [native_vlan_behavior, corrective_configuration]
+    elements: [native_vlan]
+    claim_ids: [claim-native-vlan-treatment, claim-native-vlan-agreement]
+    misconception_tags: [native_vlan_behavior_error]
+    prompt: |-
+      Given this partial running configuration on LAB-SW2, and a target
+      design where the native VLAN must be 99:
+
+      interface GigabitEthernet0/1
+       switchport trunk native vlan 1
+       switchport mode trunk
+
+      What single command, entered in interface configuration mode,
+      corrects the native VLAN?
+    response_schema: cli_interpretation_v1
+    answer_key:
+      correct_command: "switchport trunk native vlan 99"
+      accepted_mode: interface
+
+  - item_id: 11111111-1111-4111-8111-000000000009
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+    ordinal: 9
+    construct: cli_configuration
+    facet: cli_configuration
+    item_type: cli_interpretation
+    difficulty: application
+    concept_tags: [allowed_vlan_set, corrective_configuration]
+    elements: [trunk_ports]
+    claim_ids: [claim-allowed-vlan-effect]
+    misconception_tags: [allowed_vlan_omission]
+    prompt: >-
+      LAB-SW2 Gi0/1 currently has "switchport trunk allowed vlan 10,99"
+      configured, but VLAN 20 must also be allowed. Which single command,
+      entered in interface configuration mode, adds VLAN 20 without
+      removing VLAN 10 or VLAN 99 from the allowed list?
+    response_schema: cli_interpretation_v1
+    answer_key:
+      correct_command: "switchport trunk allowed vlan add 20"
+      accepted_mode: interface
+
+  - item_id: 11111111-1111-4111-8111-000000000010
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-27"}
+    ordinal: 10
+    construct: verification_troubleshooting
+    facet: verification_troubleshooting
+    item_type: cli_interpretation
+    difficulty: application
+    concept_tags: [trunk_verification, native_vlan_mismatch]
+    elements: [trunk_ports, native_vlan]
+    claim_ids: [claim-trunk-verification-state, claim-native-vlan-agreement]
+    misconception_tags: [verification_one_sided, native_vlan_behavior_error]
+    prompt: |-
+      LAB-SW1's Gi0/1 is configured with native VLAN 99 and allowed VLANs
+      10,20,99. LAB-SW2 reports this synthetic "show interfaces trunk"
+      output for the same link:
+
+      Interface  Mode   Encap  Status    Native  Allowed
+      Gi0/1      trunk  802.1Q trunking  1       10,20,99
+
+      The allowed VLAN lists already match. Based on this output, what
+      single fault exists on this trunk relative to LAB-SW1, and which
+      command revealed it?
+    response_schema: cli_interpretation_v1
+    answer_key:
+      fault: native_vlan_mismatch
+      observed_native_vlan: 1
+      expected_native_vlan: 99
+      revealing_command: "show interfaces trunk"
+    review_note: >-
+      v2 fix: the prior synthetic output showed Allowed 10,99, which
+      introduced an unintended second fault (VLAN 20 omission) alongside
+      the native mismatch. The allowed list is now 10,20,99 on both ends so
+      the item isolates exactly one fault: the native VLAN mismatch.
+
+  - item_id: 11111111-1111-4111-8111-000000000011
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-28"}
+    ordinal: 11
+    construct: verification_troubleshooting
+    facet: verification_troubleshooting
+    item_type: short_answer
+    difficulty: application
+    concept_tags: [trunk_verification, allowed_vlan_set]
+    elements: [trunk_ports]
+    claim_ids: [claim-trunk-verification-state, claim-allowed-vlan-effect]
+    misconception_tags: [verification_one_sided]
+    prompt: >-
+      Name one command you would run on each end of a trunk to confirm
+      both switches agree on the allowed VLAN list and native VLAN, and
+      explain what specific mismatch you are checking for.
+    response_schema: short_answer_v1
+    rubric:
+      - criterion_id: names-verification-command
+        description: >-
+          Names "show interfaces trunk" or an equivalent per-interface
+          switchport verification command.
+        points: 5
+      - criterion_id: checks-both-ends
+        description: Explicitly checks both ends of the link, not one.
+        points: 3
+      - criterion_id: states-mismatch-target
+        description: States native VLAN and/or allowed VLAN agreement as the target.
+        points: 2
+    points_possible: 10
+
+  - item_id: 11111111-1111-4111-8111-000000000012
+    technical_review: {status: approved, reviewer: alan, reviewed_on: "2026-07-27"}
+    ordinal: 12
+    construct: novel_transfer
+    facet: novel_transfer
+    item_type: topology_trace
+    difficulty: transfer
+    concept_tags: [multi_switch_reasoning, native_vlan_mismatch]
+    elements: [dot1q, native_vlan]
+    claim_ids: [claim-native-vlan-agreement, claim-trunk-verification-state]
+    misconception_tags: [transfer_failure]
+    prompt: >-
+      A new switch, LAB-SW3, is added beyond LAB-SW2 with its own 802.1Q
+      trunk to LAB-SW2. LAB-SW3's trunk interface uses native VLAN 1
+      while LAB-SW2 and LAB-SW1 both use native VLAN 99. Users in VLAN 99
+      (the native VLAN) report connectivity problems reaching devices
+      across the LAB-SW2-to-LAB-SW3 link, while tagged VLANs are
+      unaffected. In your own words, explain the most likely root cause and
+      how you would confirm it without hints.
+    review_note: >-
+      v2 fix: the affected traffic is now explicitly scoped to native/VLAN
+      99 (untagged) traffic, so the symptom directly supports diagnosing a
+      native VLAN mismatch (which only misdelivers untagged native-VLAN
+      frames) rather than a generic "a VLAN" symptom.
+    response_schema: short_answer_v1
+    rubric:
+      - criterion_id: identifies-native-mismatch-root-cause
+        description: >-
+          Identifies a native VLAN mismatch on the new LAB-SW2-to-LAB-SW3
+          link as the most likely root cause.
+        points: 6
+      - criterion_id: proposes-verification
+        description: >-
+          Proposes checking "show interfaces trunk" (or equivalent) on
+          both ends of the new link to confirm native VLAN agreement.
+        points: 4
+    points_possible: 10
+
+coverage_assertions_recomputed:
+  every_element_minimum_items:
+    trunk_ports: 5
+    dot1q: 3
+    native_vlan: 5
+  every_facet_minimum_items:
+    concept: 3
+    topology_reasoning: 3
+    cli_configuration: 3
+    verification_troubleshooting: 2
+    novel_transfer: 1
+  verification_items_count: 2
+  novel_transfer_items_count: 1

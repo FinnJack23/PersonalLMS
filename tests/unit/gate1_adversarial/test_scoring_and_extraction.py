@@ -38,6 +38,7 @@ from ..objective_packs._helpers import (
     make_source,
     make_support,
     make_text_region,
+    write_pack_directory,
 )
 
 
@@ -288,3 +289,162 @@ class TestPdfRemainsHonestlyBlocked:
         )
 
         assert admitted is ExtractionOutcome.EXTRACTED
+
+
+class TestGroundingResultPreservesThePositionalApi:
+    """``algorithm_provenance`` must not shift any field after it.
+
+    It was inserted between ``calculation_policy_version`` and
+    ``contributing_groups`` on the exported ``ClaimGroundingResult``
+    dataclass. A positional caller built against the earlier eight-field
+    signature would otherwise silently bind its ``contributing_groups``
+    tuple to this ``str`` parameter instead — a type mismatch dataclasses
+    do not check at runtime, so the corruption would be silent.
+    """
+
+    def test_the_original_eight_positional_fields_still_bind_by_position(self) -> None:
+        from personal_lms.objective_packs.scoring import ClaimGroundingResult
+
+        result = ClaimGroundingResult(
+            "claim-1",  # claim_id
+            8_500,  # score_basis_points
+            "ccna-grounding-v1",  # calculation_policy_version
+            ("ev-1",),  # contributing_groups
+            (8_500,),  # group_scores
+            False,  # blocked
+            None,  # block_reason
+            {"ev-1": 8_500},  # edge_scores
+        )
+
+        assert result.contributing_groups == ("ev-1",)
+        assert result.group_scores == (8_500,)
+        assert result.blocked is False
+        assert result.edge_scores == {"ev-1": 8_500}
+
+    def test_algorithm_provenance_is_keyword_only(self) -> None:
+        from personal_lms.objective_packs.scoring import (
+            CLAIM_SCORE_ALGORITHM_PROVENANCE,
+            ClaimGroundingResult,
+        )
+
+        result = ClaimGroundingResult("claim-1", 8_500, "ccna-grounding-v1")
+        assert result.algorithm_provenance == CLAIM_SCORE_ALGORITHM_PROVENANCE
+
+        # algorithm_provenance is excluded from the positional sequence
+        # entirely, so a 4th positional argument binds to the *next* field
+        # (contributing_groups) exactly as it would have before this field
+        # existed -- proof the original eight-field positional order is
+        # undisturbed rather than merely "not erroring."
+        fourth_positional = ClaimGroundingResult("claim-1", 8_500, "ccna-grounding-v1", ("ev-1",))
+        assert fourth_positional.contributing_groups == ("ev-1",)
+        assert fourth_positional.algorithm_provenance == CLAIM_SCORE_ALGORITHM_PROVENANCE
+
+        explicit = ClaimGroundingResult(
+            "claim-1", 8_500, "ccna-grounding-v1", algorithm_provenance="custom-provenance"
+        )
+        assert explicit.algorithm_provenance == "custom-provenance"
+
+
+class TestPolicyAndProvenanceIdentifiersAreRequired:
+    def test_an_empty_policy_version_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="nonempty calculation-policy identifier"):
+            ClaimEvidencePolicy(policy_version="")
+
+    def test_an_empty_algorithm_provenance_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="nonempty specification reference"):
+            ClaimEvidencePolicy(algorithm_provenance="")
+
+    def test_a_custom_policy_cannot_reuse_its_own_provenance_as_its_identity(self) -> None:
+        """Not only the known default: any self-supplied provenance too."""
+        with pytest.raises(ValueError, match="provenance, not a policy identifier"):
+            ClaimEvidencePolicy(
+                policy_version="custom-policy-x",
+                algorithm_provenance="custom-policy-x",
+                minor_conflict_penalty_basis_points=100,
+            )
+
+    def test_a_custom_policy_with_genuinely_distinct_provenance_is_accepted(self) -> None:
+        policy = ClaimEvidencePolicy(
+            policy_version="custom-policy-x",
+            algorithm_provenance="custom-spec-y",
+            minor_conflict_penalty_basis_points=100,
+        )
+
+        assert policy.policy_version == "custom-policy-x"
+        assert policy.algorithm_provenance == "custom-spec-y"
+
+
+class TestGroundingCheckReachesThePersistedReport:
+    """G1-GO-06 must fail end to end on a policy mismatch, not only inside
+    the transient ``ObjectivePackValidator`` result — and the persisted
+    check must carry deterministic observed evidence.
+    """
+
+    @staticmethod
+    def _run(tmp_path, *, declared_policy_version: str):  # type: ignore[no-untyped-def]
+        import uuid
+
+        from personal_lms.evidence_review.service import EvidenceReviewService
+        from personal_lms.evidence_review.sqlite import SQLiteEvidenceReviewRepository
+        from personal_lms.labs.ccna_mastery.wiring import build_ccna_mastery_use_case
+        from personal_lms.objective_packs.loader import ObjectivePackLoader, PackFileReader
+
+        root = tmp_path / "packs"
+        root.mkdir(exist_ok=True)
+        pack = make_pack(
+            claims=(
+                make_claim(
+                    support=(make_support(calculation_policy_version=declared_policy_version),)
+                ),
+            )
+        )
+        directory_name, _ = write_pack_directory(
+            root, pack=pack, directory_name=f"pack-{uuid.uuid4().hex}"
+        )
+
+        repository = SQLiteEvidenceReviewRepository.open(":memory:")
+        repository.initialize_schema()
+        try:
+            runner = build_ccna_mastery_use_case(
+                loader=ObjectivePackLoader(PackFileReader(roots=[root])),
+                review_service=EvidenceReviewService(repository),
+                code_revision="test-revision",
+            )
+            return runner.run(pack_directory=directory_name, run_id="r1")
+        finally:
+            repository.close()
+
+    def test_a_policy_mismatch_fails_g1_go_06_with_observed_evidence(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        from personal_lms.labs.ccna_mastery.gates import GateCheckStatus
+
+        result = self._run(tmp_path, declared_policy_version="some-other-policy")
+
+        checks = {check.check_id: check for check in result.report.checks}
+        grounding_check = checks["G1-GO-06"]
+
+        assert grounding_check.status is GateCheckStatus.FAILED
+        assert grounding_check.reason_code == "calculation_policy_mismatch"
+        assert grounding_check.observed_hash is not None
+        assert grounding_check.detail is not None
+
+    def test_the_observed_evidence_is_deterministic_across_runs(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        first = self._run(tmp_path, declared_policy_version="some-other-policy")
+        second = self._run(tmp_path, declared_policy_version="some-other-policy")
+
+        first_hash = {c.check_id: c.observed_hash for c in first.report.checks}["G1-GO-06"]
+        second_hash = {c.check_id: c.observed_hash for c in second.report.checks}["G1-GO-06"]
+
+        assert first_hash == second_hash
+
+    def test_a_matching_policy_still_passes_with_observed_evidence(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        from personal_lms.labs.ccna_mastery.gates import GateCheckStatus
+        from personal_lms.objective_packs.scoring import CLAIM_SCORE_POLICY_VERSION
+
+        result = self._run(tmp_path, declared_policy_version=CLAIM_SCORE_POLICY_VERSION)
+
+        checks = {check.check_id: check for check in result.report.checks}
+        grounding_check = checks["G1-GO-06"]
+
+        assert grounding_check.status is GateCheckStatus.PASSED
+        assert grounding_check.reason_code == "grounding_meets_threshold"
+        assert grounding_check.observed_hash is not None

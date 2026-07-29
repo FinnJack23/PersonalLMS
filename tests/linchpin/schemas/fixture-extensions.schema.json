@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://personal-lms.local/schemas/fixture-extensions-v1.0.json",
+  "title": "P0 Fixture Extension Envelope",
+  "description": "v2.1: declares the FIXTURE-ONLY metadata fields that are intentionally NOT part of the documented domain SourceArtifact / EvidenceRegion / selector contracts, so those strict records need not carry undocumented fields. This envelope is candidate test scaffolding, not a domain schema; it is never sent to a provider or persisted as a domain record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fixture_ext_sources"],
+  "properties": {
+    "fixture_ext_schema": {"type": "string"},
+    "fixture_ext_sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "file_size_bytes", "magic_bytes_hex"],
+        "properties": {
+          "source_id": {"type": "string", "minLength": 1},
+          "file_size_bytes": {"type": "integer", "minimum": 0},
+          "magic_bytes_hex": {"type": "string", "pattern": "^[0-9a-f]{2,64}$"},
+          "pixel_dimensions": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    }
+  }
+}

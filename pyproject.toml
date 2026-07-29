@@ -18,6 +18,16 @@ ollama = [
 openai-live = [
     "httpx>=0.27,<1",
 ]
+# Narrow local fixture extra for the CCNA micro-lab: safe YAML decoding
+# (PyYAML), searchable-PDF text (pdfminer.six), and PNG structure/region
+# validation (Pillow). Declared directly so `uv sync --extra ccna-lab`
+# acquires them without relying on CrewAI's transitive graph; the lightweight
+# core (`uv sync`) does not install them.
+ccna-lab = [
+    "pdfminer-six>=20260107,<20270101",
+    "pillow>=12.3,<13",
+    "pyyaml>=6.0.3,<7",
+]
 
 [project.scripts]
 personal-lms = "personal_lms.cli:main"
@@ -56,6 +66,22 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "httpx.*"
+ignore_missing_imports = true
+
+# PyYAML ships no inline types and its stub package is a separate
+# distribution. Relaxing the import here — the same treatment the other
+# optional extras get — keeps this clean in both core-only and ccna-lab
+# modes without adding a types-only dependency for one safe_load call.
+[[tool.mypy.overrides]]
+module = "yaml.*"
+ignore_missing_imports = true
+
+# pdfminer.six and Pillow are ccna-lab extras, so in core-only mode their
+# imports do not resolve and the required `uv run mypy src` check would fail on
+# a fresh checkout. Both ship py.typed, so once the extra is installed mypy
+# still binds their real types and this override goes quiet.
+[[tool.mypy.overrides]]
+module = ["pdfminer.*", "PIL.*"]
 ignore_missing_imports = true
 
 # In core-only mode (crewai extra not installed) crewai.* resolves to Any,

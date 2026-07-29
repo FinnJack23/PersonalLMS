@@ -12,7 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from personal_lms.extraction.artifacts import ExtractionOutcome
+from personal_lms.extraction.artifacts import (
+    DecodedImage,
+    ExtractionOutcome,
+    inspect_png_dimensions,
+)
 from personal_lms.extraction.local_fixture import LocalFixtureExtractor
 from personal_lms.objective_packs.loader import LoaderLimits, PackFileReader
 
@@ -58,6 +62,40 @@ def pack_root(tmp_path: Path) -> Path:
     return tmp_path
 
 
+class DeterministicPngPixelDecoder:
+    """A test double standing in for the declared Pillow adapter.
+
+    Produces one flat RGB sample block sized from the requested box, so
+    tests exercise the decode seam without depending on the optional
+    extraction extra being installed.
+    """
+
+    @property
+    def decoder_id(self) -> str:
+        return "deterministic-decoder"
+
+    @property
+    def decoder_version(self) -> str:
+        return "1.0"
+
+    def decode_region(
+        self, payload: bytes, *, box: tuple[int, int, int, int] | None = None
+    ) -> DecodedImage:
+        dimensions = inspect_png_dimensions(payload)
+        if dimensions is None:
+            raise ValueError("not a decodable PNG")
+        if box is None:
+            width, height = dimensions.width, dimensions.height
+        else:
+            width, height = box[2] - box[0], box[3] - box[1]
+        return DecodedImage(
+            width=width,
+            height=height,
+            format_name="PNG",
+            rgb_bytes=b"\x00\x00\x00" * width * height,
+        )
+
+
 @pytest.fixture
 def reader(pack_root: Path) -> PackFileReader:
     return PackFileReader(roots=[pack_root])
@@ -65,7 +103,7 @@ def reader(pack_root: Path) -> PackFileReader:
 
 @pytest.fixture
 def extractor(reader: PackFileReader) -> LocalFixtureExtractor:
-    return LocalFixtureExtractor(reader)
+    return LocalFixtureExtractor(reader, png_pixel_decoder=DeterministicPngPixelDecoder())
 
 
 class TestSupportedTypes:
@@ -143,6 +181,28 @@ class TestImageRegionExtraction:
 
         assert result.succeeded
         assert (result.image_width, result.image_height) == (64, 48)
+        # Pixels were actually materialized: a derived box and a region
+        # hash only exist when a decoder ran.
+        assert result.pixel_box is not None
+        assert result.region_content_sha256 is not None
+
+    def test_without_a_decoder_an_image_region_fails_closed(self, reader: PackFileReader) -> None:
+        """Structural checks alone never stand in for a decode.
+
+        The header-only path is exactly how a 24-byte stub could be
+        presented to a reviewer as an image; refusing here is what makes
+        "a human reviewed this diagram" mean a diagram existed.
+        """
+        extractor = LocalFixtureExtractor(reader)
+        artifact = make_source(source_id="src-png", payload=PNG_BYTES, media_type="image/png")
+
+        result = extractor.extract_region(
+            make_image_region(), artifact, relative_path="sources/synthetic.png"
+        )
+
+        assert result.outcome is ExtractionOutcome.EXTRACTOR_UNAVAILABLE
+        assert result.detail is not None
+        assert "ccna-lab" in result.detail
 
     def test_no_ocr_text_is_ever_produced_for_an_image(
         self, extractor: LocalFixtureExtractor
@@ -292,3 +352,241 @@ class TestRegionOwnership:
 def test_the_png_fixture_hash_is_stable() -> None:
     """Guards the shared fixture bytes the other tests pin against."""
     assert sha256_of(PNG_BYTES) == sha256_of(PNG_BYTES)
+
+
+class TestArchitectureDiffGuard:
+    """G1-FX-09: the adapter stays a narrow searchable-PDF/PNG adapter.
+
+    Named to match ``LINCHPIN_TRACEABILITY.md``'s planned test for this
+    row. Shares its assertion logic with the Gate 1 runtime check
+    (``architecture_guard.check_extraction_adapter_is_narrow``) so there is
+    one definition of "narrow," not a test copy that could drift from what
+    the gate actually verifies.
+    """
+
+    def test_adapter_uses_existing_extraction_contracts(self) -> None:
+        from personal_lms.labs.ccna_mastery.architecture_guard import (
+            EXPECTED_LOCAL_FIXTURE_EXTRACTOR_PUBLIC_MEMBERS,
+            check_extraction_adapter_is_narrow,
+        )
+
+        result = check_extraction_adapter_is_narrow()
+
+        assert result.public_members == EXPECTED_LOCAL_FIXTURE_EXTRACTOR_PUBLIC_MEMBERS
+        assert result.source_length > 0
+
+    def test_a_widened_public_surface_is_refused(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The architecture-diff guard, not just the shape it happens to find today."""
+        from personal_lms.extraction import local_fixture
+        from personal_lms.labs.ccna_mastery.architecture_guard import (
+            ArchitectureGuardViolation,
+            check_extraction_adapter_is_narrow,
+        )
+
+        def ingest_anything(self, payload: bytes) -> bytes:  # pragma: no cover - never called
+            return payload
+
+        monkeypatch.setattr(
+            local_fixture.LocalFixtureExtractor, "ingest_anything", ingest_anything, raising=False
+        )
+
+        with pytest.raises(ArchitectureGuardViolation, match="public surface changed"):
+            check_extraction_adapter_is_narrow()
+
+    def test_an_import_of_the_general_extraction_queue_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The detector inspects real imports, not prose that merely names one."""
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        # PackFileReader is a genuine import in local_fixture.py; forbidding
+        # it here proves the AST scan actually finds a real import rather
+        # than trivially passing because nothing on the list ever matches.
+        monkeypatch.setattr(architecture_guard, "FORBIDDEN_IMPORTED_NAMES", ("PackFileReader",))
+
+        with pytest.raises(
+            architecture_guard.ArchitectureGuardViolation, match="general extraction"
+        ):
+            architecture_guard.check_extraction_adapter_is_narrow()
+
+    def test_a_prose_mention_of_the_extraction_queue_is_not_a_violation(self) -> None:
+        """The module's own docstring names ExtractionQueue to disclaim using it."""
+        from personal_lms.labs.ccna_mastery.architecture_guard import (
+            check_extraction_adapter_is_narrow,
+        )
+
+        # Must not raise: this is exactly the guard's own false-positive
+        # regression case, since local_fixture.py's docstring says "The
+        # existing ExtractionQueue still owns job lifecycle" verbatim.
+        check_extraction_adapter_is_narrow()
+
+    def test_a_sql_schema_marker_is_refused(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        monkeypatch.setattr(
+            architecture_guard, "FORBIDDEN_SOURCE_TOKENS", ("LocalFixtureExtractor",)
+        )
+
+        with pytest.raises(architecture_guard.ArchitectureGuardViolation, match="schema marker"):
+            architecture_guard.check_extraction_adapter_is_narrow()
+
+
+class TestRepositoryWideArchitectureScan:
+    """G1-FX-09's second half: a parallel extraction service can be added
+    anywhere in the repository, not only inside ``local_fixture.py``.
+
+    Independent review (2026-07-28) found the module-level guard above
+    blind to exactly that. Every test here monkeypatches
+    ``_changed_python_files`` to a controlled list rather than depending
+    on a real git repository under ``tmp_path`` -- the git invocation
+    itself is covered separately, once, by the real-repository test and
+    the git-failure test.
+    """
+
+    def test_the_real_repository_has_no_parallel_extraction_service(self) -> None:
+        """Run for real, against this actual checkout's current change
+        set -- the strongest available proof, not a mock."""
+        from personal_lms.labs.ccna_mastery.architecture_guard import (
+            check_repository_has_no_parallel_extraction_service,
+        )
+
+        result = check_repository_has_no_parallel_extraction_service()
+
+        assert result.violations == ()
+        assert result.scanned_file_count > 0
+        assert result.reviewed_base_revision == "HEAD"
+
+    def test_a_new_file_in_the_extraction_package_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        extraction_dir = tmp_path / "src" / "personal_lms" / "extraction"
+        extraction_dir.mkdir(parents=True)
+        for name in architecture_guard._REVIEWED_EXTRACTION_PACKAGE_FILES:
+            (extraction_dir / name).write_text("", encoding="utf-8")
+        (extraction_dir / "rogue_extractor.py").write_text(
+            "# a new, unreviewed file", encoding="utf-8"
+        )
+        monkeypatch.setattr(architecture_guard, "_changed_python_files", lambda **_: [])
+
+        with pytest.raises(architecture_guard.ArchitectureGuardViolation, match="unreviewed file"):
+            architecture_guard.check_repository_has_no_parallel_extraction_service(
+                repo_root=tmp_path, base_revision="fake-base"
+            )
+
+    def test_a_new_extraction_shaped_file_elsewhere_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A parallel extraction service does not have to live inside the
+        extraction package to be caught."""
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        extraction_dir = tmp_path / "src" / "personal_lms" / "extraction"
+        extraction_dir.mkdir(parents=True)
+        for name in architecture_guard._REVIEWED_EXTRACTION_PACKAGE_FILES:
+            (extraction_dir / name).write_text("", encoding="utf-8")
+
+        rogue_dir = tmp_path / "src" / "personal_lms" / "labs" / "ccna_mastery"
+        rogue_dir.mkdir(parents=True)
+        (rogue_dir / "rogue_pdf_reader.py").write_text(
+            "import pdfminer\n\nSCHEMA = 'CREATE TABLE extra (id)'\n", encoding="utf-8"
+        )
+        relative = "personal_lms/labs/ccna_mastery/rogue_pdf_reader.py"
+        monkeypatch.setattr(architecture_guard, "_changed_python_files", lambda **_: [relative])
+
+        with pytest.raises(architecture_guard.ArchitectureGuardViolation, match="schema marker"):
+            architecture_guard.check_repository_has_no_parallel_extraction_service(
+                repo_root=tmp_path, base_revision="fake-base"
+            )
+
+    def test_a_forbidden_import_elsewhere_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        extraction_dir = tmp_path / "src" / "personal_lms" / "extraction"
+        extraction_dir.mkdir(parents=True)
+        for name in architecture_guard._REVIEWED_EXTRACTION_PACKAGE_FILES:
+            (extraction_dir / name).write_text("", encoding="utf-8")
+
+        rogue_dir = tmp_path / "src" / "personal_lms" / "labs" / "ccna_mastery"
+        rogue_dir.mkdir(parents=True)
+        (rogue_dir / "rogue_png_reader.py").write_text(
+            "from personal_lms.extraction.sqlite import ExtractionQueue\n", encoding="utf-8"
+        )
+        relative = "personal_lms/labs/ccna_mastery/rogue_png_reader.py"
+        monkeypatch.setattr(architecture_guard, "_changed_python_files", lambda **_: [relative])
+
+        with pytest.raises(
+            architecture_guard.ArchitectureGuardViolation, match="general extraction pipeline"
+        ):
+            architecture_guard.check_repository_has_no_parallel_extraction_service(
+                repo_root=tmp_path, base_revision="fake-base"
+            )
+
+    def test_an_unrelated_new_file_with_sql_is_not_flagged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The scan is narrow: a legitimate new SQLite-backed store that
+        has nothing to do with extraction must not be flagged merely for
+        defining its own, properly reviewed schema elsewhere in the app."""
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        extraction_dir = tmp_path / "src" / "personal_lms" / "extraction"
+        extraction_dir.mkdir(parents=True)
+        for name in architecture_guard._REVIEWED_EXTRACTION_PACKAGE_FILES:
+            (extraction_dir / name).write_text("", encoding="utf-8")
+
+        unrelated_dir = tmp_path / "src" / "personal_lms" / "promotion"
+        unrelated_dir.mkdir(parents=True)
+        (unrelated_dir / "sqlite.py").write_text(
+            "SCHEMA = 'CREATE TABLE promotions (id)'\n", encoding="utf-8"
+        )
+        relative = "personal_lms/promotion/sqlite.py"
+        monkeypatch.setattr(architecture_guard, "_changed_python_files", lambda **_: [relative])
+
+        result = architecture_guard.check_repository_has_no_parallel_extraction_service(
+            repo_root=tmp_path, base_revision="fake-base"
+        )
+
+        assert result.violations == ()
+
+    def test_a_deleted_changed_file_is_skipped_not_crashed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A file git reports as changed but that no longer exists on disk
+        (deleted since the base revision) is skipped, never crashes."""
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        extraction_dir = tmp_path / "src" / "personal_lms" / "extraction"
+        extraction_dir.mkdir(parents=True)
+        for name in architecture_guard._REVIEWED_EXTRACTION_PACKAGE_FILES:
+            (extraction_dir / name).write_text("", encoding="utf-8")
+
+        monkeypatch.setattr(
+            architecture_guard,
+            "_changed_python_files",
+            lambda **_: ["personal_lms/extraction/a_deleted_file.py"],
+        )
+
+        result = architecture_guard.check_repository_has_no_parallel_extraction_service(
+            repo_root=tmp_path, base_revision="fake-base"
+        )
+
+        assert result.violations == ()
+
+    def test_git_failure_is_reported_as_a_violation_not_a_crash(self, tmp_path: Path) -> None:
+        """``tmp_path`` is not a git repository, so the real git invocation
+        inside ``_changed_python_files`` fails closed here, unpatched."""
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        extraction_dir = tmp_path / "src" / "personal_lms" / "extraction"
+        extraction_dir.mkdir(parents=True)
+        for name in architecture_guard._REVIEWED_EXTRACTION_PACKAGE_FILES:
+            (extraction_dir / name).write_text("", encoding="utf-8")
+
+        with pytest.raises(architecture_guard.ArchitectureGuardViolation, match="changed file set"):
+            architecture_guard.check_repository_has_no_parallel_extraction_service(
+                repo_root=tmp_path, base_revision="fake-base"
+            )
