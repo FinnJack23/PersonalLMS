@@ -62,16 +62,22 @@ The first production milestone is a usable vertical slice, not the complete proc
 
 Grounded Tutor is a runnable Education-track vertical slice: a redacted
 Source Readiness manifest is imported, approved evidence is retrieved, a cited
-micro-lesson and exactly three evidence-backed questions are produced, and
-review results are stored in local SQLite. The fixture is synthetic and never
-reads Alan's archive or Obsidian vault.
+micro-lesson and exactly three evidence-backed questions are produced, learners
+submit one answer for each question, and deterministic review results are stored
+in local SQLite. The fixture is synthetic and never reads Alan's archive or
+Obsidian vault. This narrow offline fixture path is separate from the full
+production Tutor composition.
 
 ```bash
 uv sync
 uv run personal-lms build-week-demo
 ```
 
-Open `http://127.0.0.1:8000`. The page is labeled offline simulated mode. For
-an approved live demo, install the HTTP client extra with `uv sync --extra
+Open `http://127.0.0.1:8000`. The default local database is
+`$PWD/.local/personal-lms/grounded-tutor.sqlite3`; it survives demo restarts and
+is ignored by Git. Override it for an isolated run with
+`uv run personal-lms build-week-demo --db-path /path/to/demo.sqlite3`. Remove
+that database to reset the demo. The page is labeled offline simulated mode.
+For an approved live demo, install the HTTP client extra with `uv sync --extra
 openai-live`, then set `OPENAI_API_KEY` and optionally
 `PERSONAL_LMS_BUILD_WEEK_MODEL=gpt-5.6`; tests run with `uv run pytest`.

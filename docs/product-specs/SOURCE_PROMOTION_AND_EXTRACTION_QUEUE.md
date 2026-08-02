@@ -12,6 +12,10 @@ This milestone adds two new subsystems:
 - **Extraction queue** (`personal_lms.extraction`) — a domain-neutral job queue for *requesting* extraction work against an inventory source, and recording metadata about what was produced. It implements no real extraction (no PDF, OCR, transcription, or archive handling).
 - **Promotion bridge** (`personal_lms.promotion`) — an explicit, human-gated application service that reviews an extracted artifact and, only after an approved decision, writes a curated `SourceRecord` through the existing `SourceCatalog`.
 
+For manual, unreviewed source intake, use the documentation-only
+[`CANDIDATE_SOURCE_RECORD_TEMPLATE.md`](CANDIDATE_SOURCE_RECORD_TEMPLATE.md).
+Completing that template is never extraction, approval, or promotion.
+
 ## Why inventory and curated catalog stay separate
 
 `SourceInventoryRecord`/`SourceVersion`/`SourceLocation` (raw-archive inventory) and `SourceRecord`/`SourceCatalog` (curated catalog, already consumed by the Librarian, grounding, content pipeline, and Tutor) are deliberately two different bounded contexts:

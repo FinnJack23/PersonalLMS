@@ -14,11 +14,19 @@ Show the objective, approved evidence E1, and the generated lesson. Point out th
 
 ## 2:00–3:00 — Evidence to drill
 
-Show the three questions: recall, applied, and misconception. Explain that the drill is derived from the verified lesson and evidence rather than from an ungrounded free-form answer.
+Show the three questions: recall, applied, and misconception. The initial page
+hides answer keys. Submit one answer for each question and show the deterministic
+correct/incorrect result and its evidence-backed feedback.
+
+For q1, copy the quoted evidence text during a controlled demo: grading uses
+exact-text matching, so a reasonable paraphrase may be marked incorrect.
 
 ## 3:00–3:30 — Mastery tracking
 
-Show the review state and explain that mastery persistence uses local SQLite. No Obsidian write or hosted call is required for this path.
+Show the review state and explain that mastery persistence uses local SQLite at
+`$PWD/.local/personal-lms/grounded-tutor.sqlite3` by default. Restarting with the
+same path preserves stored review records. No Obsidian write or hosted call is
+required for this path.
 
 ## 3:30–4:15 — Privacy block
 

@@ -50,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     demo_parser.add_argument("--host", default="127.0.0.1")
     demo_parser.add_argument("--port", type=int, default=8000)
+    demo_parser.add_argument(
+        "--db-path",
+        default=".local/personal-lms/grounded-tutor.sqlite3",
+        help="Local SQLite path for persisted demo mastery records.",
+    )
 
     # Nested lab commands are registered from their own handler module,
     # keeping this parser the single console entry point. The import is
@@ -125,7 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "build-week-demo":
         from personal_lms.build_week_demo import serve
 
-        serve(args.host, args.port)
+        serve(args.host, args.port, args.db_path)
     if args.command == "ccna-lab":
         return handle_ccna_lab_command(args)
 

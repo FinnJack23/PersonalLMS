@@ -20,7 +20,12 @@ uv sync
 uv run personal-lms build-week-demo
 ```
 
-Open `http://127.0.0.1:8000`. The page should show `Grounded Tutor`, an E1 citation, a retrieval-gap warning, exactly three questions, and local SQLite mastery language.
+Open `http://127.0.0.1:8000`. The page should show `Grounded Tutor`, an E1
+citation, a retrieval-gap warning, exactly three questions, and no answer key.
+Submit all three answers to see deterministic correct/incorrect feedback. The
+default database is `$PWD/.local/personal-lms/grounded-tutor.sqlite3`; it is
+ignored by Git and persists across restarts. Use `--db-path /path/to/demo.sqlite3`
+for an isolated database, or remove that file to reset it.
 
 ## Five-minute demonstration
 
@@ -29,7 +34,8 @@ Open `http://127.0.0.1:8000`. The page should show `Grounded Tutor`, an E1 citat
 3. Show approved evidence E1 and the generated lesson.
 4. Point out the preserved E1 citation and explicit administrative-distance retrieval gap.
 5. Show exactly three drill questions: recall, applied, and misconception.
-6. Show that review results are stored in local SQLite, not the Obsidian vault.
+6. Submit three answers and show the deterministic results plus the local SQLite
+   review-record count. Restart with the same database path to show persistence.
 7. Explain that the default path is deterministic offline simulation; hosted GPT-5.6 is an opt-in, separately controlled adapter path.
 
 ## Privacy boundary demonstration
@@ -51,4 +57,16 @@ The hosted adapter accepts only `PUBLIC` requests and rejects `INTERNAL`, `SENSI
 
 ## Known limitations
 
-The UI is an offline simulated demo rather than a production web application. The WSL validation process could not reach the reported Windows `localhost:11434` Ollama service, so no completed local-model evaluation result is claimed. No Git remote is configured, so publication remains a manual follow-up.
+The UI is an offline simulated fixture rather than the full production Tutor
+composition or a production web application. The WSL validation process could
+not reach the reported Windows `localhost:11434` Ollama service, so no completed
+local-model evaluation result is claimed. Historical release records that mention
+an absent Git remote or an earlier branch are superseded by current repository
+state; publication remains a manual follow-up.
+
+Question 1 uses exact-text matching against the quoted evidence passage, so a
+reasonable paraphrase may be marked incorrect. During a controlled demo, copy
+the quoted evidence text when answering q1.
+
+The independent review's optional edge-case tests remain follow-up work and are
+not included in this repair.
