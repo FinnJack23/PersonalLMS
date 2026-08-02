@@ -8,6 +8,7 @@ pretends a sidecar file counts as extraction.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -453,8 +454,57 @@ class TestRepositoryWideArchitectureScan:
         result = check_repository_has_no_parallel_extraction_service()
 
         assert result.violations == ()
-        assert result.scanned_file_count > 0
         assert result.reviewed_base_revision == "HEAD"
+
+    def test_a_clean_change_set_has_zero_scanned_files_not_a_violation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A clean checkout is evidence of no new architecture, not a failure."""
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        extraction_dir = tmp_path / "src" / "personal_lms" / "extraction"
+        extraction_dir.mkdir(parents=True)
+        for name in architecture_guard._REVIEWED_EXTRACTION_PACKAGE_FILES:
+            (extraction_dir / name).write_text("", encoding="utf-8")
+        monkeypatch.setattr(architecture_guard, "_changed_python_files", lambda **_: [])
+
+        result = architecture_guard.check_repository_has_no_parallel_extraction_service(
+            repo_root=tmp_path, base_revision="fake-base"
+        )
+
+        assert result.scanned_file_count == 0
+        assert result.violations == ()
+
+    def test_changed_python_files_cover_dirty_and_committed_deltas(self, tmp_path: Path) -> None:
+        """Git state, rather than network state, supplies both scan lifecycles."""
+        from personal_lms.labs.ccna_mastery.architecture_guard import _changed_python_files
+
+        source = tmp_path / "src" / "personal_lms" / "changed.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("VALUE = 1\n", encoding="utf-8")
+
+        def git(*args: str) -> str:
+            return subprocess.run(
+                ["git", "-C", str(tmp_path), *args],
+                capture_output=True,
+                check=True,
+                text=True,
+            ).stdout.strip()
+
+        git("init")
+        git("config", "user.email", "architecture-guard@example.test")
+        git("config", "user.name", "Architecture Guard Test")
+        git("add", "src/personal_lms/changed.py")
+        git("commit", "-m", "base")
+        base_revision = git("rev-parse", "HEAD")
+
+        source.write_text("VALUE = 2\n", encoding="utf-8")
+        expected = ["src/personal_lms/changed.py"]
+        assert _changed_python_files(repo_root=tmp_path, base_revision=base_revision) == expected
+
+        git("add", "src/personal_lms/changed.py")
+        git("commit", "-m", "changed python module")
+        assert _changed_python_files(repo_root=tmp_path, base_revision=base_revision) == expected
 
     def test_a_new_file_in_the_extraction_package_is_refused(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
