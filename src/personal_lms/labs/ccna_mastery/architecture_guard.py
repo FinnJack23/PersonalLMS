@@ -36,7 +36,7 @@ import ast
 import inspect
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import personal_lms
 from personal_lms.extraction import local_fixture
@@ -115,6 +115,25 @@ def _forbidden_imports(source: str) -> list[str]:
             for alias in node.names:
                 if alias.name in FORBIDDEN_IMPORTED_NAMES:
                     violations.append(f"from {module} import {alias.name}")
+    return violations
+
+
+def _extraction_library_imports(source: str) -> list[str]:
+    """PDF/PNG library imports that only the reviewed adapter may own."""
+    tree = ast.parse(source)
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            violations.extend(
+                f"import {alias.name}"
+                for alias in node.names
+                if alias.name.split(".")[0] in _EXTRACTION_LIBRARY_MODULE_ROOTS
+            )
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and (node.module or "").split(".")[0] in _EXTRACTION_LIBRARY_MODULE_ROOTS
+        ):
+            violations.append(f"from {node.module} import ...")
     return violations
 
 
@@ -237,7 +256,7 @@ def _package_checkout_root() -> Path:
 
 def _changed_python_files(*, repo_root: Path, base_revision: str) -> list[str]:
     """Every ``src/personal_lms/**/*.py`` path that differs from
-    ``base_revision`` or is untracked, as repo-relative POSIX paths.
+    ``base_revision`` or is untracked, as ``src``-relative POSIX paths.
 
     Two git invocations, matching the exact pattern ``resolve_code_revision``
     already uses elsewhere in this codebase: a tracked diff misses new
@@ -284,7 +303,34 @@ def _changed_python_files(*, repo_root: Path, base_revision: str) -> list[str]:
         ) from exc
 
     paths = {line for line in (*tracked.splitlines(), *untracked.splitlines()) if line}
-    return sorted(path for path in paths if path.endswith(".py"))
+    return sorted(
+        normalized
+        for path in paths
+        if (normalized := _source_relative_python_path(path)) is not None
+    )
+
+
+def _source_relative_python_path(git_path: str) -> str | None:
+    """Return a safe ``src``-relative Python path from Git's POSIX output.
+
+    Git reports paths relative to the checkout (for example,
+    ``src/personal_lms/cli.py``); the repository scan consistently uses
+    paths relative to ``src`` (``personal_lms/cli.py``).  Git path output is
+    POSIX-formatted even on Windows, so parsing it with ``PurePosixPath``
+    avoids mixing platform-specific separators into this boundary.
+    """
+    path = PurePosixPath(git_path)
+    source_prefix = PurePosixPath("src/personal_lms")
+    if (
+        not git_path
+        or path.is_absolute()
+        or ".." in path.parts
+        or path == source_prefix
+        or source_prefix not in path.parents
+        or path.suffix != ".py"
+    ):
+        return None
+    return path.relative_to("src").as_posix()
 
 
 def _looks_extraction_shaped(relative_path: str, source: str) -> bool:
@@ -302,20 +348,10 @@ def _looks_extraction_shaped(relative_path: str, source: str) -> bool:
     if relative_path.startswith("personal_lms/extraction/"):
         return True
     try:
-        tree = ast.parse(source)
+        ast.parse(source)
     except SyntaxError:
         return False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            if any(
-                alias.name.split(".")[0] in _EXTRACTION_LIBRARY_MODULE_ROOTS for alias in node.names
-            ):
-                return True
-        elif isinstance(node, ast.ImportFrom):
-            module_root = (node.module or "").split(".")[0]
-            if module_root in _EXTRACTION_LIBRARY_MODULE_ROOTS:
-                return True
-    return bool(_forbidden_imports(source))
+    return bool(_extraction_library_imports(source) or _forbidden_imports(source))
 
 
 def check_repository_has_no_parallel_extraction_service(
@@ -354,13 +390,18 @@ def check_repository_has_no_parallel_extraction_service(
         )
 
     changed = _changed_python_files(repo_root=root, base_revision=base_revision)
+    source_root = (root / "src").resolve()
+    scanned_file_count = 0
     for relative_path in changed:
         if relative_path in _FILES_EXEMPT_FROM_REPOSITORY_SCAN:
             continue
-        absolute = root / "src" / relative_path
+        absolute = (source_root / relative_path).resolve()
+        if not absolute.is_relative_to(source_root):
+            continue
         if not absolute.is_file():
             continue  # deleted since base_revision; nothing left to scan
         source = absolute.read_text(encoding="utf-8")
+        scanned_file_count += 1
         if not _looks_extraction_shaped(relative_path, source):
             continue
 
@@ -368,6 +409,12 @@ def check_repository_has_no_parallel_extraction_service(
         if forbidden_imports:
             violations.append(
                 f"{relative_path} imports the general extraction pipeline: {forbidden_imports}"
+            )
+        extraction_library_imports = _extraction_library_imports(source)
+        if extraction_library_imports:
+            violations.append(
+                f"{relative_path} imports extraction library module(s): "
+                f"{extraction_library_imports}"
             )
         sql_markers = [token for token in FORBIDDEN_SOURCE_TOKENS if token in source]
         if sql_markers:
@@ -381,6 +428,6 @@ def check_repository_has_no_parallel_extraction_service(
 
     return RepositoryArchitectureScanResult(
         reviewed_base_revision=base_revision,
-        scanned_file_count=len(changed),
+        scanned_file_count=scanned_file_count,
         violations=(),
     )

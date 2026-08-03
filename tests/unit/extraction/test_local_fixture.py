@@ -355,6 +355,37 @@ def test_the_png_fixture_hash_is_stable() -> None:
     assert sha256_of(PNG_BYTES) == sha256_of(PNG_BYTES)
 
 
+def _git(repo_root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo_root), *args],
+        capture_output=True,
+        check=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _write_guard_source(repo_root: Path, relative_path: str, source: str) -> Path:
+    path = repo_root / "src" / "personal_lms" / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(source, encoding="utf-8")
+    return path
+
+
+def _initialize_guard_repository(repo_root: Path) -> str:
+    """Create a committed clean repository with the reviewed extraction set."""
+    from personal_lms.labs.ccna_mastery import architecture_guard
+
+    _git(repo_root, "init")
+    _git(repo_root, "config", "user.email", "architecture-guard@example.test")
+    _git(repo_root, "config", "user.name", "Architecture Guard Test")
+    _git(repo_root, "config", "commit.gpgSign", "false")
+    for name in architecture_guard._REVIEWED_EXTRACTION_PACKAGE_FILES:
+        _write_guard_source(repo_root, f"extraction/{name}", "")
+    _git(repo_root, "add", "src/personal_lms")
+    _git(repo_root, "commit", "-m", "clean baseline")
+    return _git(repo_root, "rev-parse", "HEAD")
+
+
 class TestArchitectureDiffGuard:
     """G1-FX-09: the adapter stays a narrow searchable-PDF/PNG adapter.
 
@@ -438,10 +469,9 @@ class TestRepositoryWideArchitectureScan:
 
     Independent review (2026-07-28) found the module-level guard above
     blind to exactly that. Every test here monkeypatches
-    ``_changed_python_files`` to a controlled list rather than depending
-    on a real git repository under ``tmp_path`` -- the git invocation
-    itself is covered separately, once, by the real-repository test and
-    the git-failure test.
+    ``_changed_python_files`` to a controlled list for focused signal
+    coverage. The Git-backed tests below exercise the complete public guard
+    against temporary repositories.
     """
 
     def test_the_real_repository_has_no_parallel_extraction_service(self) -> None:
@@ -499,12 +529,104 @@ class TestRepositoryWideArchitectureScan:
         base_revision = git("rev-parse", "HEAD")
 
         source.write_text("VALUE = 2\n", encoding="utf-8")
-        expected = ["src/personal_lms/changed.py"]
+        expected = ["personal_lms/changed.py"]
         assert _changed_python_files(repo_root=tmp_path, base_revision=base_revision) == expected
 
         git("add", "src/personal_lms/changed.py")
         git("commit", "-m", "changed python module")
         assert _changed_python_files(repo_root=tmp_path, base_revision=base_revision) == expected
+
+    @pytest.mark.parametrize(
+        "git_path",
+        [
+            "src/personal_lms/../outside.py",
+            "src/personal_lms/../../outside.py",
+            "/src/personal_lms/absolute.py",
+            "src/other_package/module.py",
+            "src\\personal_lms\\windows_style.py",
+            "src/personal_lms/not_python.txt",
+        ],
+    )
+    def test_only_safe_src_relative_python_paths_are_canonicalized(self, git_path: str) -> None:
+        from personal_lms.labs.ccna_mastery.architecture_guard import _source_relative_python_path
+
+        assert _source_relative_python_path(git_path) is None
+
+    def test_dirty_untracked_forbidden_import_is_detected_by_real_git(self, tmp_path: Path) -> None:
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        base_revision = _initialize_guard_repository(tmp_path)
+        _write_guard_source(tmp_path, "labs/ccna_mastery/rogue_pdf_reader.py", "import pdfminer\n")
+
+        with pytest.raises(
+            architecture_guard.ArchitectureGuardViolation, match="rogue_pdf_reader.py"
+        ):
+            architecture_guard.check_repository_has_no_parallel_extraction_service(
+                repo_root=tmp_path, base_revision=base_revision
+            )
+
+    def test_dirty_untracked_schema_marker_is_detected_by_real_git(self, tmp_path: Path) -> None:
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        base_revision = _initialize_guard_repository(tmp_path)
+        _write_guard_source(
+            tmp_path,
+            "labs/ccna_mastery/rogue_schema.py",
+            "import pdfminer\nSCHEMA = 'CREATE TABLE rogue (id)'\n",
+        )
+
+        with pytest.raises(architecture_guard.ArchitectureGuardViolation, match="schema marker"):
+            architecture_guard.check_repository_has_no_parallel_extraction_service(
+                repo_root=tmp_path, base_revision=base_revision
+            )
+
+    def test_explicit_committed_base_violation_is_detected_by_real_git(
+        self, tmp_path: Path
+    ) -> None:
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        base_revision = _initialize_guard_repository(tmp_path)
+        source = _write_guard_source(
+            tmp_path, "labs/ccna_mastery/committed_rogue.py", "import pdfminer\n"
+        )
+        _git(tmp_path, "add", str(source.relative_to(tmp_path)))
+        _git(tmp_path, "commit", "-m", "add rogue extraction module")
+
+        with pytest.raises(
+            architecture_guard.ArchitectureGuardViolation, match="committed_rogue.py"
+        ):
+            architecture_guard.check_repository_has_no_parallel_extraction_service(
+                repo_root=tmp_path, base_revision=base_revision
+            )
+
+    def test_explicit_committed_base_clean_delta_is_scanned_by_real_git(
+        self, tmp_path: Path
+    ) -> None:
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        base_revision = _initialize_guard_repository(tmp_path)
+        source = _write_guard_source(tmp_path, "labs/ccna_mastery/legitimate.py", "VALUE = 1\n")
+        _git(tmp_path, "add", str(source.relative_to(tmp_path)))
+        _git(tmp_path, "commit", "-m", "add legitimate module")
+
+        result = architecture_guard.check_repository_has_no_parallel_extraction_service(
+            repo_root=tmp_path, base_revision=base_revision
+        )
+
+        assert result.scanned_file_count == 1
+        assert result.violations == ()
+
+    def test_clean_repository_has_no_changed_files_by_real_git(self, tmp_path: Path) -> None:
+        from personal_lms.labs.ccna_mastery import architecture_guard
+
+        base_revision = _initialize_guard_repository(tmp_path)
+
+        result = architecture_guard.check_repository_has_no_parallel_extraction_service(
+            repo_root=tmp_path, base_revision=base_revision
+        )
+
+        assert result.scanned_file_count == 0
+        assert result.violations == ()
 
     def test_a_new_file_in_the_extraction_package_is_refused(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -600,6 +722,7 @@ class TestRepositoryWideArchitectureScan:
             repo_root=tmp_path, base_revision="fake-base"
         )
 
+        assert result.scanned_file_count == 1
         assert result.violations == ()
 
     def test_a_deleted_changed_file_is_skipped_not_crashed(
@@ -624,6 +747,7 @@ class TestRepositoryWideArchitectureScan:
             repo_root=tmp_path, base_revision="fake-base"
         )
 
+        assert result.scanned_file_count == 0
         assert result.violations == ()
 
     def test_git_failure_is_reported_as_a_violation_not_a_crash(self, tmp_path: Path) -> None:
